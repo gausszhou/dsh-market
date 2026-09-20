@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  entryForDep, extractReadmeImageCandidates, extractReadmeImages, formatCount, groupSwitchState, installedForCatalog, isInstalled, isMarketItself, looksTerminal, matchInstalledName, orderedCategories, pageItems, pluginCategories, pluginsForFavorites, previewDimensionScore, rankThemeScreenshots, safeScreenshots, staleFavoriteUrls, themePlugins, visiblePlugins, humanOutput, catalogEntryForInstalled} from '../src/client/market-data.ts'
+  entryForDep, extractReadmeImageCandidates, extractReadmeImages, formatCount, groupSwitchState, installedForCatalog, isBlacklisted, isInstalled, isMarketItself, looksTerminal, matchInstalledName, orderedCategories, pageItems, pluginCategories, pluginsForFavorites, previewDimensionScore, rankThemeScreenshots, safeScreenshots, staleFavoriteUrls, themePlugins, visiblePlugins, humanOutput, catalogEntryForInstalled} from '../src/client/market-data.ts'
 import type { RegistryPlugin, ScreenshotCandidate } from '../src/client/market-data.ts'
 
 function plugin(partial: Partial<RegistryPlugin>): RegistryPlugin {
@@ -974,5 +974,43 @@ describe('local link:/file: matching stays cheap as the catalog grows (#589)', (
     expect(catalogEntryForInstalled(plugins, 'solo', spec, [], [''])).toBeUndefined()
     // Re-ask in the other order: the cached answers must not have merged.
     expect(catalogEntryForInstalled(plugins, 'solo', spec, [], [])?.url).toBe('https://github.com/a/solo')
+  })
+})
+
+describe('isBlacklisted / visiblePlugins blacklist', () => {
+  it('matches by bare name, npm package name, repo root, and full normalized url', () => {
+    const entry = plugin({ name: 'dsh-noise', npm: 'dsh-noise', url: 'https://github.com/owner/dsh-noise' })
+    expect(isBlacklisted(entry, new Set(['dsh-noise']))).toBe(true)
+    expect(isBlacklisted(entry, new Set(['owner/dsh-noise']))).toBe(true)
+    expect(isBlacklisted(entry, new Set(['https://github.com/owner/dsh-noise']))).toBe(true)
+    // Tokens arrive pre-normalized from the server (lowercased, trailing
+    // slashes stripped); the matcher normalizes only the entry URL, so an
+    // unnormalized token is honestly a non-match — pins the contract.
+    expect(isBlacklisted(entry, new Set(['HTTPS://GITHUB.COM/OWNER/DSH-NOISE/']))).toBe(false)
+    expect(isBlacklisted(entry, new Set(['unrelated']))).toBe(false)
+  })
+
+  it('matches a subpath catalog entry by its repo root and by its subpath identity', () => {
+    const sub = plugin({ name: 'a', url: 'https://github.com/owner/mono/tree/main/pkgs/a' })
+    // The bare root is intent: "nothing from owner/mono".
+    expect(isBlacklisted(sub, new Set(['owner/mono']))).toBe(true)
+    expect(isBlacklisted(sub, new Set(['owner/mono#path:/pkgs/a']))).toBe(true)
+    expect(isBlacklisted(sub, new Set(['owner/other']))).toBe(false)
+  })
+
+  it('an undefined or empty set hides nothing', () => {
+    const entry = plugin({ name: 'dsh-noise' })
+    expect(isBlacklisted(entry, undefined)).toBe(false)
+    expect(isBlacklisted(entry, new Set())).toBe(false)
+  })
+
+  it('visiblePlugins drops blacklisted entries and keeps the rest in order', () => {
+    const keep = plugin({ name: 'keep', url: 'https://github.com/owner/keep' })
+    const drop = plugin({ name: 'noise', url: 'https://github.com/owner/noise' })
+    const out = visiblePlugins([keep, drop], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      blacklist: new Set(['owner/noise']),
+    })
+    expect(out.map(entry => entry.name)).toEqual(['keep'])
   })
 })

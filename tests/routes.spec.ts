@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dump } from 'js-yaml'
-import { mountMarketRoutes, type MarketHost } from '../src/routes.ts'
+import { mountMarketRoutes, normalizeBlacklist, type MarketHost } from '../src/routes.ts'
 import { sameOrigin } from '../src/http.ts'
 import * as orderApi from '../src/order.ts'
 import type { PluginCommandRuntime } from '../src/dsh-cli.ts'
@@ -811,5 +811,27 @@ describe('POST /dsh-market/restore-snapshot & /dsh-market/delete-snapshot', () =
     const res = await hit(routes, '/dsh-market/delete-snapshot', post('/dsh-market/delete-snapshot', { snapshot: 'snapshot-does-not-exist' }))
     expect(res.status).toBe(400)
     expect(String(jsonBody(res).error)).toMatch(/snapshot not found/)
+  })
+})
+
+describe('normalizeBlacklist', () => {
+  it('passes clean tokens through trimmed, lowercased and de-duplicated', () => {
+    expect(normalizeBlacklist([' dsh-Noise ', 'owner/Repo', 'dsh-noise']))
+      .toEqual(['dsh-noise', 'owner/repo'])
+  })
+
+  it('drops junk: non-strings, blanks, oversized values and non-arrays', () => {
+    expect(normalizeBlacklist(['ok', 42, null, '', '   ', 'x'.repeat(201)]))
+      .toEqual(['ok'])
+    expect(normalizeBlacklist(undefined)).toEqual([])
+    expect(normalizeBlacklist('not-an-array')).toEqual([])
+  })
+
+  it('caps the payload at MAX_BLACKLIST tokens', () => {
+    const many = Array.from({ length: 250 }, (_, index) => `pkg-${index}`)
+    const out = normalizeBlacklist(many)
+    expect(out).toHaveLength(200)
+    expect(out[0]).toBe('pkg-0')
+    expect(out[199]).toBe('pkg-199')
   })
 })

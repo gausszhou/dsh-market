@@ -1433,6 +1433,13 @@ export function MarketSection(props: MarketSectionProps) {
    * first reply always has to ask which one it was.
    */
   const [version, setVersion] = useState<string | null>(null)
+  /**
+   * Catalog blacklist tokens from the market config (status payload). Entries
+   * matching any token are hidden from Discover and Themes — a filter, not a
+   * management surface, so the Installed tab never reads it.
+   */
+  const [blacklist, setBlacklist] = useState<readonly string[]>([])
+  const blacklistSet = useMemo(() => new Set(blacklist), [blacklist])
   /** Non-live activation results from the last operation, shown as a banner. */
   const [activationWarnings, setActivationWarnings] = useState<{ name: string; info: ActivationInfo }[]>([])
   const [hostDependencyFindings, setHostDependencyFindings] = useState<SharedHostPackageDependencyFinding[]>([])
@@ -1734,6 +1741,7 @@ export function MarketSection(props: MarketSectionProps) {
         setRestartEnabled(status.restart === true)
         setSupervisor(typeof status.supervisor === 'string' ? status.supervisor : null)
         setDebuggerLatch(typeof status.debugger === 'string' ? status.debugger : null)
+        if (Array.isArray(status.blacklist)) setBlacklist(status.blacklist)
         if (typeof status.version === 'string' && status.version !== '') setVersion(status.version)
       })
       .catch(() => {})
@@ -1979,8 +1987,9 @@ export function MarketSection(props: MarketSectionProps) {
       sinceDays: timeRange === 'all' ? undefined : TIME_RANGE_DAYS[timeRange],
       hostCompatibility,
       compatibleWithHost,
+      blacklist: blacklistSet,
     })),
-    [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost])
+    [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, blacklistSet])
   const { currentPage, totalPages, pageSize, goToPage, changePageSize } =
     usePagination(plugins.length, [q, cat, sortField, sortDir, timeRange, compatibleWithHost], scrollToTop)
   const pagePlugins = plugins.slice((currentPage - 1) * pageSize, currentPage * pageSize)
@@ -2012,8 +2021,9 @@ export function MarketSection(props: MarketSectionProps) {
       category: 'theme', query: qThemes, lang, categories: data.categories,
       sort: `${themeSortField}-${themeSortDir}`,
       sinceDays: themeTimeRange === 'all' ? undefined : TIME_RANGE_DAYS[themeTimeRange],
+      blacklist: blacklistSet,
     })),
-    [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange])
+    [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, blacklistSet])
   const themePagination = usePagination(
     themePlugins.length, [qThemes, themeSortField, themeSortDir, themeTimeRange], scrollToTop)
   const themePagePlugins = themePlugins.slice(
@@ -4250,7 +4260,10 @@ export function MarketSection(props: MarketSectionProps) {
                     </div>
                     </div>
                     {plugins.length === 0
-                      ? <div className={css.empty}>{t('empty')}</div>
+                      ? <div className={css.empty}>
+                          <div>{t('empty')}</div>
+                          {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
+                        </div>
                       : (
                           <>
                             <Masonry items={pagePlugins} render={pluginCard} />
@@ -4405,7 +4418,10 @@ export function MarketSection(props: MarketSectionProps) {
                     : anyThemePlugins.length === 0
                       ? <div className={css.empty}>{t('themeEmpty')}</div>
                       : themePlugins.length === 0
-                        ? <div className={css.empty}>{t('empty')}</div>
+                        ? <div className={css.empty}>
+                            <div>{t('empty')}</div>
+                            {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
+                          </div>
                         : (
                             <>
                               <div className={css.themeResultBar}>

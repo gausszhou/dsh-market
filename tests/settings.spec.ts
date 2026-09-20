@@ -42,6 +42,15 @@ describe('MarketSettings schema', () => {
     expect(MarketSettings({ allowRestart: false }).allowRestart).toBe(false)
   })
 
+  it('defaults the blacklist to empty', () => {
+    expect(MarketSettings({}).blacklist).toEqual([])
+  })
+
+  it('accepts configured blacklist tokens verbatim', () => {
+    expect(MarketSettings({ blacklist: ['dsh-noise', 'owner/repo'] }).blacklist)
+      .toEqual(['dsh-noise', 'owner/repo'])
+  })
+
   it('claims only what this namespace actually stores', () => {
     // The release channel was in here for one version, and it made this a
     // SECOND writer for a value that lives in the market's state.json. The
@@ -52,10 +61,13 @@ describe('MarketSettings schema', () => {
     //
     // A schema field is a claim of ownership, so this asserts the claim
     // stays narrow — widening it silently is exactly how that happened.
+    // `blacklist` is a DELIBERATE widening: it is a new value this namespace
+    // owns end to end (schema → resolved.blacklist → the status payload the
+    // lists read), not a second writer for a value stored elsewhere.
     // The consequence itself is caught in layer 3 (tests/web/channel.e2e.ts)
     // against a real settings service, per this file's own rule about not
     // hand-writing a stand-in for a contract we did not author.
-    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart'])
+    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart', 'blacklist'])
   })
 })
 

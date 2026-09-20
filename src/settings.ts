@@ -94,10 +94,13 @@ interface SettingsService {
 /** The market settings a user may edit at runtime. */
 export interface MarketSettings {
   allowRestart: boolean
+  /** Catalog blacklist tokens; matching entries are hidden from the lists. */
+  blacklist: string[]
 }
 
 export const MarketSettings: z<MarketSettings> = z.object({
   allowRestart: z.boolean().default(true),
+  blacklist: z.array(z.string()).default([]),
 })
 
 /** Serve the Desktop card without claiming settings-controlled restart. */
@@ -123,18 +126,24 @@ export function installDesktopMarketSettings(ctx: Context): void {
  * @param ctx - the plugin context owning the wiring.
  * @param resolved - the live config object the routes read.
  */
-export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean }): void {
+export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[] }): void {
   // The switch must show what the routes will actually DO, which since #229
   // is not simply "unset means on": under a detected supervisor an unset
   // value means off, because the supervisor owns restarts. Asking
   // restartAllowed() rather than re-deriving it here is what keeps the two
   // from drifting — a switch showing On beside a hidden button is the same
   // class of confusion the detection exists to end.
-  const entry = { allowRestart: restartAllowed(resolved) }
+  const entry: MarketSettings = {
+    allowRestart: restartAllowed(resolved),
+    blacklist: resolved.blacklist ?? [],
+  }
   let source = (): MarketSettings => entry
   // Assigns ONLY what this namespace owns. Writing back a field the market
   // stores elsewhere is how the channel lost its memory.
-  const apply = (): void => { resolved.allowRestart = source().allowRestart }
+  const apply = (): void => {
+    resolved.allowRestart = source().allowRestart
+    resolved.blacklist = source().blacklist
+  }
 
   // `inject` is the graceful-degradation boundary: on a host with no
   // settings service the callback never runs and the composed entry stands.

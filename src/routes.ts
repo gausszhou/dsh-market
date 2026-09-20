@@ -120,6 +120,39 @@ export interface MarketConfig {
   region?: Region
   /** Snapshots retained per profile (issue #98); defaults to DEFAULT_MAX_SNAPSHOTS. */
   maxSnapshots?: number
+  /**
+   * Catalog blacklist: tokens matching an entry's name, npm package,
+   * owner/repo or full URL hide it from the Discover and Themes lists.
+   * Configurable through the profile patch and this plugin's settings page.
+   */
+  blacklist?: string[]
+}
+
+/** Cap on blacklist tokens a status payload will carry. */
+const MAX_BLACKLIST = 200
+
+/**
+ * Normalize the configured catalog blacklist for the client.
+ *
+ * Tokens are trimmed, lowercased, de-duplicated, capped, and junk dropped
+ * (non-strings, empty strings, >200-char values). The client renders the
+ * status payload directly, so anything that reaches it must be matchable
+ * as-is — `isBlacklisted` normalizes only the entry URL, trusting everything
+ * else to have been cleaned here.
+ */
+export function normalizeBlacklist(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const token = item.trim().toLowerCase()
+    if (token === '' || token.length > 200 || seen.has(token)) continue
+    seen.add(token)
+    out.push(token)
+    if (out.length >= MAX_BLACKLIST) break
+  }
+  return out
 }
 
 /**
@@ -2549,6 +2582,11 @@ export function mountMarketRoutes(
           // exactly once, so nobody has to wonder why downloads moved.
           regionAuto,
           restart: restartAllowed(config),
+          // Tokens the browser matches catalog entries against to hide them
+          // from Discover/Themes. Sent with the same "config report" payload
+          // as restart/githubProxyManaged so a settings edit lands without a
+          // page reload.
+          blacklist: normalizeBlacklist(config.blacklist),
           // Named so the UI can say WHY the button is gone. A blank
           // "no restart button" is the state #229 reported as broken.
           supervisor: detectedSupervisor(),

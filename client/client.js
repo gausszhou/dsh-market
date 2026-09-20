@@ -96,6 +96,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			favoritesStaleNote: "{0} 个收藏已不在目录中",
 			favoritesClearStale: "清除失效收藏",
 			favoritesClearingStale: "清除中…",
+			blacklistFilteredHint: "有些条目已被黑名单过滤，可在本插件配置中调整。",
 			tabDiscover: "发现",
 			tabFavorites: "收藏",
 			tabInstalled: "已安装",
@@ -629,6 +630,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			favoritesStaleNote: "{0} favorites are no longer in the catalog",
 			favoritesClearStale: "Remove stale favorites",
 			favoritesClearingStale: "Removing…",
+			blacklistFilteredHint: "Some entries are hidden by the configured blacklist — edit it in this plugin's configuration.",
 			tabDiscover: "Discover",
 			tabFavorites: "Favorites",
 			tabInstalled: "Installed",
@@ -1371,6 +1373,24 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			return plugin.name === "dsh-market" || plugin.npm === "dshmarket";
 		}
 		/**
+		* Whether a catalog entry is on the operator's blacklist.
+		*
+		* Matching is by identity set, the same shapes installed-state matching
+		* trusts: bare name, npm package name, repo root (`owner/repo`), the subpath
+		* form (`owner/repo#path:/sub`), and the full normalized URL. Tokens arrive
+		* pre-normalized from the server (trimmed, lowercased, de-duplicated); the
+		* URL is normalized here because it is not one of the identity forms above.
+		* Unknown tokens are simply never hit — a blacklist is a filter, not a list
+		* that needs stale-entry bookkeeping.
+		*/
+		function isBlacklisted(plugin, blacklist) {
+			if (blacklist === void 0 || blacklist.size === 0) return false;
+			if (blacklist.has(plugin.url.trim().toLowerCase().replace(/\/+$/u, ""))) return true;
+			for (const id of entryIdentities(plugin)) if (blacklist.has(id)) return true;
+			const repo = /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\/|$)/iu.exec(plugin.url);
+			return repo !== null && blacklist.has(repo[1].toLowerCase());
+		}
+		/**
 		* A single pass that inserts a separator after the character on the left of
 		* every Han ↔ Latin/number boundary. Punctuation is normalized separately
 		* below. Keeping this generic lets `MCP管理`, `管理MCP`, and `OAuth2授权`
@@ -1462,6 +1482,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			const tokens = query.split(" ").filter(Boolean);
 			return plugins.flatMap((plugin, index) => {
 				if (isMarketItself(plugin)) return [];
+				if (options.blacklist !== void 0 && isBlacklisted(plugin, options.blacklist)) return [];
 				const categories = pluginCategories(plugin);
 				if (options.category !== "all" && !categories.includes(options.category)) return [];
 				if (options.sinceDays !== void 0 && !withinDays(plugin.added, options.sinceDays)) return [];
@@ -6388,6 +6409,13 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			* first reply always has to ask which one it was.
 			*/
 			const [version, setVersion] = (0, react.useState)(null);
+			/**
+			* Catalog blacklist tokens from the market config (status payload). Entries
+			* matching any token are hidden from Discover and Themes — a filter, not a
+			* management surface, so the Installed tab never reads it.
+			*/
+			const [blacklist, setBlacklist] = (0, react.useState)([]);
+			const blacklistSet = (0, react.useMemo)(() => new Set(blacklist), [blacklist]);
 			/** Non-live activation results from the last operation, shown as a banner. */
 			const [activationWarnings, setActivationWarnings] = (0, react.useState)([]);
 			const [hostDependencyFindings, setHostDependencyFindings] = (0, react.useState)([]);
@@ -6641,6 +6669,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 					setRestartEnabled(status.restart === true);
 					setSupervisor(typeof status.supervisor === "string" ? status.supervisor : null);
 					setDebuggerLatch(typeof status.debugger === "string" ? status.debugger : null);
+					if (Array.isArray(status.blacklist)) setBlacklist(status.blacklist);
 					if (typeof status.version === "string" && status.version !== "") setVersion(status.version);
 				}).catch(() => {});
 				refreshInstalled();
@@ -6865,7 +6894,8 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 				sort: `${sortField}-${sortDir}`,
 				sinceDays: timeRange === "all" ? void 0 : TIME_RANGE_DAYS[timeRange],
 				hostCompatibility,
-				compatibleWithHost
+				compatibleWithHost,
+				blacklist: blacklistSet
 			}), [
 				data,
 				q,
@@ -6875,7 +6905,8 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 				sortDir,
 				timeRange,
 				hostCompatibility,
-				compatibleWithHost
+				compatibleWithHost,
+				blacklistSet
 			]);
 			const { currentPage, totalPages, pageSize, goToPage, changePageSize } = usePagination(plugins.length, [
 				q,
@@ -6911,14 +6942,16 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 				lang,
 				categories: data.categories,
 				sort: `${themeSortField}-${themeSortDir}`,
-				sinceDays: themeTimeRange === "all" ? void 0 : TIME_RANGE_DAYS[themeTimeRange]
+				sinceDays: themeTimeRange === "all" ? void 0 : TIME_RANGE_DAYS[themeTimeRange],
+				blacklist: blacklistSet
 			}), [
 				data,
 				qThemes,
 				lang,
 				themeSortField,
 				themeSortDir,
-				themeTimeRange
+				themeTimeRange,
+				blacklistSet
 			]);
 			const themePagination = usePagination(themePlugins$1.length, [
 				qThemes,
@@ -9368,9 +9401,12 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 									})]
 								})]
 							}),
-							plugins.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							plugins.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: Market_module_css_default.empty,
-								children: t("empty")
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: t("empty") }), blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: Market_module_css_default.hostFilterNote,
+									children: t("blacklistFilteredHint")
+								})]
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Masonry, {
 								items: pagePlugins,
 								render: pluginCard
@@ -9533,9 +9569,12 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 							}) : anyThemePlugins.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: Market_module_css_default.empty,
 								children: t("themeEmpty")
-							}) : themePlugins$1.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							}) : themePlugins$1.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: Market_module_css_default.empty,
-								children: t("empty")
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: t("empty") }), blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: Market_module_css_default.hostFilterNote,
+									children: t("blacklistFilteredHint")
+								})]
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									className: Market_module_css_default.themeResultBar,

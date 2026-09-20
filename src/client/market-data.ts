@@ -157,6 +157,8 @@ export interface MarketStatus {
   version?: string
   /** Whether the profile package manager owns the market dependency. */
   selfManaged?: boolean
+  /** Blacklist tokens from the market config; matching entries are hidden from the lists. */
+  blacklist?: string[]
   /** Legacy single prefix for browser bundles predating githubRoutes. */
   githubProxy?: string | null
   /** Ordered per-service routes; null means the canonical GitHub URL. */
@@ -346,6 +348,11 @@ export interface ListQuery {
   hostCompatibility?: HostCompatibilityMap
   /** Hide only entries that are known to be incompatible; unknown stays visible. */
   compatibleWithHost?: boolean
+  /**
+   * Operator blacklist (normalized tokens): entries matching any token are
+   * hidden. Absent/empty means no blacklist is configured.
+   */
+  blacklist?: ReadonlySet<string>
 }
 
 /**
@@ -356,6 +363,32 @@ export interface ListQuery {
  */
 export function isMarketItself(plugin: Pick<RegistryPlugin, 'name' | 'npm'>): boolean {
   return plugin.name === 'dsh-market' || plugin.npm === 'dshmarket'
+}
+
+/**
+ * Whether a catalog entry is on the operator's blacklist.
+ *
+ * Matching is by identity set, the same shapes installed-state matching
+ * trusts: bare name, npm package name, repo root (`owner/repo`), the subpath
+ * form (`owner/repo#path:/sub`), and the full normalized URL. Tokens arrive
+ * pre-normalized from the server (trimmed, lowercased, de-duplicated); the
+ * URL is normalized here because it is not one of the identity forms above.
+ * Unknown tokens are simply never hit — a blacklist is a filter, not a list
+ * that needs stale-entry bookkeeping.
+ */
+export function isBlacklisted(plugin: RegistryPlugin, blacklist: ReadonlySet<string> | undefined): boolean {
+  if (blacklist === undefined || blacklist.size === 0) return false
+  if (blacklist.has(plugin.url.trim().toLowerCase().replace(/\/+$/u, ''))) return true
+  for (const id of entryIdentities(plugin)) {
+    if (blacklist.has(id)) return true
+  }
+  // A subpath catalog entry identifies as `repo#path:/sub` only — exact by
+  // design for installed-state matching, where a bare root would let two
+  // subpackages of one monorepo cross-match. A blacklist token names INTENT
+  // instead: `owner/repo` means "nothing from this repo", so the bare root
+  // is matched explicitly here.
+  const repo = /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\/|$)/iu.exec(plugin.url)
+  return repo !== null && blacklist.has(repo[1]!.toLowerCase())
 }
 
 /**
@@ -490,6 +523,7 @@ export function visiblePlugins(plugins: RegistryPlugin[], options: ListQuery): R
   const tokens = query.split(' ').filter(Boolean)
   const scored = plugins.flatMap((plugin, index) => {
     if (isMarketItself(plugin)) return []
+    if (options.blacklist !== undefined && isBlacklisted(plugin, options.blacklist)) return []
     const categories = pluginCategories(plugin)
     if (options.category !== 'all' && !categories.includes(options.category)) return []
     if (options.sinceDays !== undefined && !withinDays(plugin.added, options.sinceDays)) return []
