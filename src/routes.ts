@@ -126,6 +126,14 @@ export interface MarketConfig {
    * Configurable through the profile patch and this plugin's settings page.
    */
   blacklist?: string[]
+  /**
+   * Whether the market may update ITSELF. Default true. Set false to block
+   * the market's own update end to end: update detection excludes it, the
+   * update route refuses it, and the settings card stops offering it. Other
+   * packages never follow this setting — a block on the market is a statement
+   * about the market only.
+   */
+  enableSelfUpdate?: boolean
 }
 
 /** Cap on blacklist tokens a status payload will carry. */
@@ -1283,18 +1291,24 @@ export function mountMarketRoutes(
   async function updateCheckInputs(): Promise<{
     channelFor: Map<string, Channel>
     onlineSourceFor: Map<string, string>
+    /** Installed self names, when self-updates are disabled (#enableSelfUpdate). */
+    excluded: ReadonlySet<string>
   }> {
     // Only the market itself follows the channel setting (see
     // MarketSettings.channel): a user opting into betas is volunteering to
     // try THIS plugin early, not to be handed every other author's
-    // unreleased work.
+    // unreleased work. With self-updates disabled the channel is moot for
+    // the market, and its name is excluded from detection entirely.
     const channel = activeChannel()
     const installed = readInstalled(config.profile, activeProfileDir)
+    const selfNames = Object.keys(installed).filter(name => SELF_NAMES.has(name))
+    const selfUpdateEnabled = config.enableSelfUpdate !== false
     const channelFor = new Map(
-      Object.keys(installed)
-        .filter(name => SELF_NAMES.has(name))
+      selfNames
+        .filter(name => selfUpdateEnabled)
         .map(name => [name, channel] as const),
     )
+    const excluded = new Set(selfUpdateEnabled ? [] : selfNames)
     const onlineSourceFor = new Map<string, string>()
     try {
       const registry = await loadRegistry()
@@ -1305,7 +1319,7 @@ export function mountMarketRoutes(
     } catch (error) {
       logEvent('warn', 'updates', `package source lookup failed — ${error instanceof Error ? error.message : String(error)}`)
     }
-    return { channelFor, onlineSourceFor }
+    return { channelFor, onlineSourceFor, excluded }
   }
 
   const disposers = [
@@ -1371,8 +1385,8 @@ export function mountMarketRoutes(
           return
         }
         try {
-          const { channelFor, onlineSourceFor } = await updateCheckInputs()
-          const updates = await checkUpdates(config.profile, forceCheckFrom(request), activeProfileDir, channelFor, onlineSourceFor)
+          const { channelFor, onlineSourceFor, excluded } = await updateCheckInputs()
+          const updates = await checkUpdates(config.profile, forceCheckFrom(request), activeProfileDir, channelFor, onlineSourceFor, excluded)
           // `packages` carries the same objects the single-package endpoint
           // returns, so one parser serves both. Only updatable ones: a badge
           // wants the count, a panel wants the rows, and neither wants to
@@ -1418,8 +1432,8 @@ export function mountMarketRoutes(
             // The same inputs the market page builds, so a generation (#497)
             // or a catalog-matched local package answers here with the
             // release it can be compared against rather than with nothing.
-            const { channelFor, onlineSourceFor } = await updateCheckInputs()
-            const update = (await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor))[name]
+            const { channelFor, onlineSourceFor, excluded } = await updateCheckInputs()
+            const update = (await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor, excluded))[name]
             if (update === undefined) {
               sendJson(response, 404, { schema: UPDATE_API_V1_SCHEMA, error: 'plugin is not installed' })
               return
@@ -2587,6 +2601,9 @@ export function mountMarketRoutes(
           // as restart/githubProxyManaged so a settings edit lands without a
           // page reload.
           blacklist: normalizeBlacklist(config.blacklist),
+          // Named so the card can say WHY it is not offering an update — a
+          // missing button is otherwise read as "up to date".
+          enableSelfUpdate: config.enableSelfUpdate !== false,
           // Named so the UI can say WHY the button is gone. A blank
           // "no restart button" is the state #229 reported as broken.
           supervisor: detectedSupervisor(),
@@ -2669,7 +2686,7 @@ export function mountMarketRoutes(
         }
         try {
           const force = (request.url ?? '').includes('force=1')
-          const { channelFor, onlineSourceFor } = await updateCheckInputs()
+          const { channelFor, onlineSourceFor, excluded } = await updateCheckInputs()
           // Migration hints are this listing's own business: the market page
           // is where "this could come from npm now" is offered, and no other
           // caller acts on it.
@@ -2684,7 +2701,7 @@ export function mountMarketRoutes(
           } catch (error) {
             logEvent('warn', 'updates', `package source lookup failed — ${error instanceof Error ? error.message : String(error)}`)
           }
-          const updates = await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor)
+          const updates = await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor, excluded)
           for (const [name, migration] of sourceMigrationFor) {
             const status = updates[name]
             if (status !== undefined) updates[name] = { ...status, sourceMigration: migration }
@@ -2953,6 +2970,16 @@ sendJson(response, 200, { updates })
             const name = typeof body.name === 'string' ? body.name : ''
             const force = body.force === true
             const restore = body.restore === true
+            // Self-updates disabled is a hard wall, not a softer listing:
+            // detection already excludes the market (updateCheckInputs), but
+            // a stale page could still POST the route, and the route is where
+            // "off" has to be enforced rather than reported.
+            if (SELF_NAMES.has(name) && config.enableSelfUpdate === false) {
+              sendJson(response, 400, {
+                error: '市场自身的更新已在配置中停用（enableSelfUpdate: false）。需要更新时，请先在插件配置页把它改回 true 再试。 / The market\'s own updates are disabled by configuration (enableSelfUpdate: false). Set it back to true on the plugin configuration page to update the market.',
+              })
+              return
+            }
             const manifestCapture = captureUpdateManifest()
             if (!manifestCapture.ok) {
               sendJson(response, 500, {

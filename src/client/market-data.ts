@@ -157,6 +157,8 @@ export interface MarketStatus {
   version?: string
   /** Whether the profile package manager owns the market dependency. */
   selfManaged?: boolean
+  /** Whether the market may update itself (config enableSelfUpdate; default true). */
+  enableSelfUpdate?: boolean
   /** Blacklist tokens from the market config; matching entries are hidden from the lists. */
   blacklist?: string[]
   /** Legacy single prefix for browser bundles predating githubRoutes. */

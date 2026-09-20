@@ -96,11 +96,14 @@ export interface MarketSettings {
   allowRestart: boolean
   /** Catalog blacklist tokens; matching entries are hidden from the lists. */
   blacklist: string[]
+  /** Whether the market may update ITSELF; false blocks self-update end to end. */
+  enableSelfUpdate: boolean
 }
 
 export const MarketSettings: z<MarketSettings> = z.object({
   allowRestart: z.boolean().default(true),
   blacklist: z.array(z.string()).default([]),
+  enableSelfUpdate: z.boolean().default(true),
 })
 
 /** Serve the Desktop card without claiming settings-controlled restart. */
@@ -126,7 +129,7 @@ export function installDesktopMarketSettings(ctx: Context): void {
  * @param ctx - the plugin context owning the wiring.
  * @param resolved - the live config object the routes read.
  */
-export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[] }): void {
+export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[]; enableSelfUpdate?: boolean }): void {
   // The switch must show what the routes will actually DO, which since #229
   // is not simply "unset means on": under a detected supervisor an unset
   // value means off, because the supervisor owns restarts. Asking
@@ -136,6 +139,7 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
   const entry: MarketSettings = {
     allowRestart: restartAllowed(resolved),
     blacklist: resolved.blacklist ?? [],
+    enableSelfUpdate: resolved.enableSelfUpdate ?? true,
   }
   let source = (): MarketSettings => entry
   // Assigns ONLY what this namespace owns. Writing back a field the market
@@ -143,6 +147,7 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
   const apply = (): void => {
     resolved.allowRestart = source().allowRestart
     resolved.blacklist = source().blacklist
+    resolved.enableSelfUpdate = source().enableSelfUpdate
   }
 
   // `inject` is the graceful-degradation boundary: on a host with no

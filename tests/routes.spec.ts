@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dump } from 'js-yaml'
-import { mountMarketRoutes, normalizeBlacklist, type MarketHost } from '../src/routes.ts'
+import { mountMarketRoutes, normalizeBlacklist, type MarketConfig, type MarketHost } from '../src/routes.ts'
 import { sameOrigin } from '../src/http.ts'
 import * as orderApi from '../src/order.ts'
 import type { PluginCommandRuntime } from '../src/dsh-cli.ts'
@@ -37,7 +37,7 @@ const HOST = '127.0.0.1:3080'
  * Mount the market routes against a stub host. The returned `routes` map is
  * keyed by path so tests can invoke each handler directly.
  */
-function mount(commandRuntime?: PluginCommandRuntime): { host: MarketHost; routes: Map<string, RouteHandler> } {
+function mount(commandRuntime?: PluginCommandRuntime, config?: Partial<MarketConfig>): { host: MarketHost; routes: Map<string, RouteHandler> } {
   const routes = new Map<string, RouteHandler>()
   const host: MarketHost = {
     webServer: {
@@ -50,7 +50,7 @@ function mount(commandRuntime?: PluginCommandRuntime): { host: MarketHost; route
     loader: { entries: () => [] },
     plugin: () => ({ await: async () => undefined, dispose: async () => undefined }),
   }
-  mountMarketRoutes(host, { profile: 'web' }, commandRuntime)
+  mountMarketRoutes(host, { profile: 'web', ...config }, commandRuntime)
   return { host, routes }
 }
 
@@ -833,5 +833,50 @@ describe('normalizeBlacklist', () => {
     expect(out).toHaveLength(200)
     expect(out[0]).toBe('pkg-0')
     expect(out[199]).toBe('pkg-199')
+  })
+})
+
+describe('enableSelfUpdate config', () => {
+  it('reports self-updates enabled by default in the status payload', async () => {
+    const res = await hit(routes, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).enableSelfUpdate).toBe(true)
+  })
+
+  it('reports self-updates disabled when the config says so', async () => {
+    const blocked = mount(undefined, { enableSelfUpdate: false }).routes
+    const res = await hit(blocked, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).enableSelfUpdate).toBe(false)
+  })
+
+  it('refuses a self-update when enableSelfUpdate is false', async () => {
+    const blocked = mount(undefined, { enableSelfUpdate: false }).routes
+    const res = await hit(blocked, '/dsh-market/update', post('/dsh-market/update', { name: 'dshmarket' }))
+    expect(res.status).toBe(400)
+    expect(String(jsonBody(res).error)).toContain('enableSelfUpdate')
+  })
+
+  it('does not apply the self-update guard when enableSelfUpdate is unset', async () => {
+    const res = await hit(routes, '/dsh-market/update', post('/dsh-market/update', { name: 'dshmarket' }))
+    // Falls through to the ordinary path (no profile manifest yet → its own
+    // error) — never the config-block message.
+    expect(String((res.json() as { error?: unknown }).error ?? '')).not.toContain('enableSelfUpdate')
+  })
+
+  it('omits the installed market from update checks when self-updates are disabled', async () => {
+    writeProfile(['dshmarket'])
+    const blocked = mount(undefined, { enableSelfUpdate: false }).routes
+    // The route's catalog source lookup would otherwise reach the network;
+    // a failing stub is the same answer the unit lane gives every spec.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })))
+    try {
+      const res = await hit(blocked, '/dsh-market/updates', { method: 'GET', url: '/dsh-market/updates' })
+      expect(res.status).toBe(200)
+      const updates = (jsonBody(res).updates ?? {}) as Record<string, unknown>
+      expect(updates['dshmarket']).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

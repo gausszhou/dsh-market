@@ -79,6 +79,8 @@ interface SelfStatus {
   githubProxyManaged: boolean
   /** Whether the profile package manager owns this market installation. */
   selfManaged: boolean
+  /** Whether self-updates are enabled (config enableSelfUpdate, default on). */
+  enableSelfUpdate: boolean
 }
 
 /** The subset of api('/dsh-market/status') this card reads. */
@@ -95,6 +97,7 @@ interface StatusBody {
   githubProxyCustom?: string | null
   githubProxyManaged?: boolean
   selfManaged?: boolean
+  enableSelfUpdate?: boolean
 }
 
 /** What api('/dsh-market/updates') says about the market's own row. */
@@ -161,6 +164,9 @@ function readStatus(body: StatusBody): SelfStatus {
     githubProxyCustom: typeof body.githubProxyCustom === 'string' ? body.githubProxyCustom : null,
     githubProxyManaged: body.githubProxyManaged === true,
     selfManaged: body.selfManaged !== false,
+    // A host too old to send the field predates the setting; the market
+    // updating itself was the only behavior then, so the card shows On.
+    enableSelfUpdate: body.enableSelfUpdate !== false,
   }
 }
 
@@ -233,6 +239,7 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
             version: null, restart: false, channel: 'stable', channels: ['stable', 'beta'],
             region: 'global', regions: REGIONS, regionAuto: false,
             githubProxyCustom: null, githubProxyManaged: false, selfManaged: true,
+            enableSelfUpdate: true,
           })
         }
       }
@@ -403,7 +410,9 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
   const body = phase === 'removed'
     ? row(t('setSelfRemoved'), t('setSelfRemovedHint'), null)
     : h(Fragment, null,
-        status?.selfManaged === true ? row(
+        status?.selfManaged === true ? status.enableSelfUpdate === false
+          ? row(t('setSelfUpdateBlocked'), t('setSelfUpdateBlockedHint'), null)
+          : row(
           // An older offer is not an update, and calling it one would have
           // the user click "更新" to go backwards. It IS what picking an
           // earlier channel asked for, so it is offered — under its own name.

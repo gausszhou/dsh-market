@@ -12,7 +12,7 @@ import type { AgentsServiceLike } from './agents.ts'
 export const name = 'dsh-market'
 
 /** Optional cordis.yml configuration; profile defaults to `web`. */
-export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots' | 'blacklist'>>
+export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots' | 'blacklist' | 'enableSelfUpdate'>>
 
 /** Structural subset of DSH Desktop's public `desktopProfiles` contract. */
 interface DesktopProfilesLike {
@@ -70,6 +70,7 @@ export function apply(ctx: Context, config?: Config): void {
         allowRestart: config?.allowRestart,
         maxSnapshots: config?.maxSnapshots,
         blacklist: config?.blacklist,
+        enableSelfUpdate: config?.enableSelfUpdate,
       }
       // Web settings may control restart; Desktop only registers the card's
       // namespace below. Both no-op on a host without a settings service.
@@ -95,6 +96,7 @@ export function apply(ctx: Context, config?: Config): void {
         allowRestart: false,
         maxSnapshots: config?.maxSnapshots,
         blacklist: config?.blacklist,
+        enableSelfUpdate: config?.enableSelfUpdate,
       }
       const desktopHost = desktopCtx as unknown as MarketEffectHost
       installDesktopMarketSettings(desktopCtx)

@@ -41,6 +41,8 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			setSelfUpdateHint: "更新会下载新版本，重启后生效。",
 			setSelfUpToDateHint: "",
 			setSelfHostManagedHint: "这份市场由桌面宿主安装，新版本请在桌面端更新。",
+			setSelfUpdateBlocked: "市场自身的更新已停用",
+			setSelfUpdateBlockedHint: "配置 enableSelfUpdate: false 生效中。需要更新时，在「插件配置」页把它改回 true 并保存即可恢复。",
 			setSelfUpdate: "更新",
 			setSelfUpdatedHint: "已下载完成。重启 DeepSeek Harness 后新版本才会生效——前端页面会立即更新，服务端不会。",
 			setRegion: "下载区域",
@@ -575,6 +577,8 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			setSelfUpdateHint: "Updating downloads the new version; it takes effect after a restart.",
 			setSelfUpToDateHint: "",
 			setSelfHostManagedHint: "This copy was installed by the desktop host; update it from the desktop app.",
+			setSelfUpdateBlocked: "The market's own updates are disabled",
+			setSelfUpdateBlockedHint: "Configuration enableSelfUpdate: false is in effect. Set it back to true and save on the plugin configuration page to restore updates.",
 			setSelfUpdate: "Update",
 			setSelfUpdatedHint: "Downloaded. Restart DeepSeek Harness for it to take effect — the frontend updates at once, the server does not.",
 			setRegion: "Download region",
@@ -10915,7 +10919,8 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 				regionAuto: body.regionAuto === true,
 				githubProxyCustom: typeof body.githubProxyCustom === "string" ? body.githubProxyCustom : null,
 				githubProxyManaged: body.githubProxyManaged === true,
-				selfManaged: body.selfManaged !== false
+				selfManaged: body.selfManaged !== false,
+				enableSelfUpdate: body.enableSelfUpdate !== false
 			};
 		}
 		function readUpdate(own) {
@@ -10980,7 +10985,8 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 							regionAuto: false,
 							githubProxyCustom: null,
 							githubProxyManaged: false,
-							selfManaged: true
+							selfManaged: true,
+							enableSelfUpdate: true
 						});
 					}
 					try {
@@ -11150,7 +11156,7 @@ window.__ModuleLoader__.load({ id: "dshmarket", factory: (require) => {
 			}, [post, t]);
 			/** One label + hint block with an optional action, the host's row shape. */
 			const row = (label, hint, action) => (0, react.createElement)("div", { className: Market_module_css_default.setRow }, (0, react.createElement)("div", { className: Market_module_css_default.setLabelBox }, (0, react.createElement)("div", { className: Market_module_css_default.setLabel }, label), (0, react.createElement)("div", { className: Market_module_css_default.setHint }, hint)), action);
-			const body = phase === "removed" ? row(t("setSelfRemoved"), t("setSelfRemovedHint"), null) : (0, react.createElement)(react.Fragment, null, status?.selfManaged === true ? row((update?.updateAvailable === true || update?.hostManaged === true) && update.latest !== null ? `${t("setSelfUpdateReady")} ${update.latest}` : update?.channelSwitch != null ? `${t("setChannelSwitch")} ${update.channelSwitch}` : t("setSelfUpToDate"), phase === "updated" ? t("setSelfUpdatedHint") : update?.channelSwitch != null ? t("setChannelSwitchHint") : update?.updateAvailable === true ? t("setSelfUpdateHint") : update?.hostManaged === true && update.latest !== null ? t("setSelfHostManagedHint") : t("setSelfUpToDateHint"), phase === "updated" ? null : update?.updateAvailable === true ? (0, react.createElement)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+			const body = phase === "removed" ? row(t("setSelfRemoved"), t("setSelfRemovedHint"), null) : (0, react.createElement)(react.Fragment, null, status?.selfManaged === true ? status.enableSelfUpdate === false ? row(t("setSelfUpdateBlocked"), t("setSelfUpdateBlockedHint"), null) : row((update?.updateAvailable === true || update?.hostManaged === true) && update.latest !== null ? `${t("setSelfUpdateReady")} ${update.latest}` : update?.channelSwitch != null ? `${t("setChannelSwitch")} ${update.channelSwitch}` : t("setSelfUpToDate"), phase === "updated" ? t("setSelfUpdatedHint") : update?.channelSwitch != null ? t("setChannelSwitchHint") : update?.updateAvailable === true ? t("setSelfUpdateHint") : update?.hostManaged === true && update.latest !== null ? t("setSelfHostManagedHint") : t("setSelfUpToDateHint"), phase === "updated" ? null : update?.updateAvailable === true ? (0, react.createElement)(_deepseek_ai_dsh_client_ui_primitives.Button, {
 				variant: "primary",
 				size: "sm",
 				disabled: busy,

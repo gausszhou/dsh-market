@@ -138,6 +138,15 @@ describe('checkUpdates — github pins', () => {
     expect(result.themer).toMatchObject({ kind: 'github', current: OLD, latest: HEAD, updateAvailable: true })
   })
 
+  it('skips an excluded name before any lookup', async () => {
+    // enableSelfUpdate: false excludes the market itself from detection —
+    // the entry must vanish from the listing entirely, not read as
+    // "up to date" (a lie next to a working update button).
+    const result = await checkUpdates('web', true, profileWith('^1.0.0', null, '1.0.0'), new Map(), new Map(), new Set(['themer']))
+    expect(result.themer).toBeUndefined()
+    expect(Object.keys(result)).toHaveLength(0)
+  })
+
   it('reports no update when the pin already IS HEAD', async () => {
     const result = await checkUpdates('web', true, profileWith('github:owner/themer', HEAD))
     expect(result.themer).toMatchObject({ current: HEAD, latest: HEAD, updateAvailable: false })
