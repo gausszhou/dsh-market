@@ -51,12 +51,14 @@ describe('MarketSettings schema', () => {
       .toEqual(['dsh-noise', 'owner/repo'])
   })
 
-  it('defaults enableSelfUpdate to on', () => {
-    expect(MarketSettings({}).enableSelfUpdate).toBe(true)
+  it('defaults enableSelfUpdate to off', () => {
+    // The fork ships without self-update: the market must never offer or
+    // apply its own update unless explicitly enabled.
+    expect(MarketSettings({}).enableSelfUpdate).toBe(false)
   })
 
-  it('accepts an explicit off', () => {
-    expect(MarketSettings({ enableSelfUpdate: false }).enableSelfUpdate).toBe(false)
+  it('accepts an explicit on', () => {
+    expect(MarketSettings({ enableSelfUpdate: true }).enableSelfUpdate).toBe(true)
   })
 
   it('claims only what this namespace actually stores', () => {

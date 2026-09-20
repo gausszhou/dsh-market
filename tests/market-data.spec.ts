@@ -779,6 +779,7 @@ describe('isMarketItself / visiblePlugins excludes the market from Discover', ()
   it('matches the market by catalog name or npm package, not by owner or category', () => {
     expect(isMarketItself(plugin({ name: 'dsh-market', npm: undefined }))).toBe(true)
     expect(isMarketItself(plugin({ name: 'anything', npm: 'dshmarket' }))).toBe(true)
+    expect(isMarketItself(plugin({ name: 'anything', npm: '@gausszhou/dsh-market' }))).toBe(true)
     expect(isMarketItself(plugin({ name: 'dsh-market-clone', npm: 'not-dshmarket' }))).toBe(false)
   })
 

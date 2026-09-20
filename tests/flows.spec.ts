@@ -704,7 +704,10 @@ beforeEach(() => {
   hot.favorites = []
   regionProbe.pending = null
   hot.failNext = false
-  bed = createTestbed()
+  bed = createTestbed({ enableSelfUpdate: true })
+  // Self-update MECHANISM tests run with the feature switched on — the
+  // fork's default (off) and the route guard that enforces it are pinned in
+  // tests/routes.spec.ts, not here.
   // The install route asks the registry for `latest` before a fresh npm add
   // (#594). Answer from the fake registry so no test reaches the network;
   // everything else goes to the real fetch, or to whatever a test stubs.
@@ -4693,11 +4696,12 @@ describe('custom groups (#60)', () => {
     await seedMembers()
     await bed.dispatch('POST', '/dsh-market/groups', { action: 'create', name: 'work' })
     const set = await bed.dispatch('POST', '/dsh-market/groups', {
-      action: 'set-members', name: 'work', members: ['dsh-loop', 'dsh-share', 'ghost', 'dshmarket'],
+      action: 'set-members', name: 'work', members: ['dsh-loop', 'dsh-share', 'ghost', 'dshmarket', '@gausszhou/dsh-market'],
     })
     expect(set.status).toBe(200)
     expect(set.json.groups.work.sort()).toEqual(['dsh-loop', 'dsh-share'])
     expect(set.json.groups.work).not.toContain('dshmarket')
+    expect(set.json.groups.work).not.toContain('@gausszhou/dsh-market')
 
     await bed.dispatch('POST', '/dsh-market/uninstall', { name: 'dsh-loop' })
     const listed = await bed.dispatch('GET', '/dsh-market/installed')

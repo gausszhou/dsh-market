@@ -79,7 +79,7 @@ interface SelfStatus {
   githubProxyManaged: boolean
   /** Whether the profile package manager owns this market installation. */
   selfManaged: boolean
-  /** Whether self-updates are enabled (config enableSelfUpdate, default on). */
+  /** Whether self-updates are enabled (config enableSelfUpdate, default off). */
   enableSelfUpdate: boolean
 }
 
@@ -164,9 +164,9 @@ function readStatus(body: StatusBody): SelfStatus {
     githubProxyCustom: typeof body.githubProxyCustom === 'string' ? body.githubProxyCustom : null,
     githubProxyManaged: body.githubProxyManaged === true,
     selfManaged: body.selfManaged !== false,
-    // A host too old to send the field predates the setting; the market
-    // updating itself was the only behavior then, so the card shows On.
-    enableSelfUpdate: body.enableSelfUpdate !== false,
+    // A host too old to send the field predates the setting; the fork does
+    // not self-update by default, so the card shows Off unless told otherwise.
+    enableSelfUpdate: body.enableSelfUpdate === true,
   }
 }
 
@@ -239,14 +239,14 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
             version: null, restart: false, channel: 'stable', channels: ['stable', 'beta'],
             region: 'global', regions: REGIONS, regionAuto: false,
             githubProxyCustom: null, githubProxyManaged: false, selfManaged: true,
-            enableSelfUpdate: true,
+            enableSelfUpdate: false,
           })
         }
       }
       try {
         const response = await fetch(api('/dsh-market/updates'), { cache: 'no-store' })
         const body = (await response.json()) as { updates?: Record<string, RawUpdate> }
-        const own = body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
+        const own = body.updates?.['@gausszhou/dsh-market'] ?? body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
         if (live && own !== undefined) setUpdate(readUpdate(own))
       } catch { /* an update check that fails leaves the row without an offer */ }
     })()
@@ -270,7 +270,7 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
     void (async () => {
       try {
         const body = await post(api('/dsh-market/update'), {
-          name: 'dshmarket',
+          name: '@gausszhou/dsh-market',
           ...(update?.restoreRequired === true ? { restore: true } : {}),
           ...(force ? { force: true } : {}),
         }) as {
@@ -317,7 +317,7 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
   const refreshUpdate = useCallback(async (): Promise<void> => {
     const response = await fetch(api('/dsh-market/updates') + '?force=1', { cache: 'no-store' })
     const body = (await response.json()) as { updates?: Record<string, RawUpdate> }
-    const own = body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
+    const own = body.updates?.['@gausszhou/dsh-market'] ?? body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
     setUpdate(own === undefined ? null : readUpdate(own))
   }, [])
 

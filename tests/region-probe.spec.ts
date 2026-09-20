@@ -74,8 +74,8 @@ describe('probeRegion', () => {
     expect(calls).toHaveLength(2)
     // `/latest` is a few KB; the bare package name is ~320KB. A probe that
     // downloads a third of a megabyte to answer "which is closer" has cost
-    // more than the answer is worth.
-    for (const url of calls) expect(url.endsWith('/dshmarket/latest')).toBe(true)
+    // more than the answer is worth. Scoped names URL-encode the slash.
+    for (const url of calls) expect(url.endsWith('/@gausszhou%2fdsh-market/latest')).toBe(true)
   })
 })
 

@@ -96,14 +96,14 @@ export interface MarketSettings {
   allowRestart: boolean
   /** Catalog blacklist tokens; matching entries are hidden from the lists. */
   blacklist: string[]
-  /** Whether the market may update ITSELF; false blocks self-update end to end. */
+  /** Whether the market may update ITSELF; default off — needs an explicit true. */
   enableSelfUpdate: boolean
 }
 
 export const MarketSettings: z<MarketSettings> = z.object({
   allowRestart: z.boolean().default(true),
   blacklist: z.array(z.string()).default([]),
-  enableSelfUpdate: z.boolean().default(true),
+  enableSelfUpdate: z.boolean().default(false),
 })
 
 /** Serve the Desktop card without claiming settings-controlled restart. */
@@ -139,7 +139,7 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
   const entry: MarketSettings = {
     allowRestart: restartAllowed(resolved),
     blacklist: resolved.blacklist ?? [],
-    enableSelfUpdate: resolved.enableSelfUpdate ?? true,
+    enableSelfUpdate: resolved.enableSelfUpdate ?? false,
   }
   let source = (): MarketSettings => entry
   // Assigns ONLY what this namespace owns. Writing back a field the market

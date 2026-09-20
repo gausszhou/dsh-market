@@ -2995,7 +2995,9 @@ export function MarketSection(props: MarketSectionProps) {
 
   // The market itself stays out of the batch: its update reloads this page
   // mid-run, which would strand the remaining items.
-  const selfName = installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
+  const selfName = installed['@gausszhou/dsh-market'] !== undefined
+    ? '@gausszhou/dsh-market'
+    : installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
   const updatableNames = Object.keys(installed).filter(
     name => name !== selfName
       && !updatedNames.includes(name)
@@ -3711,7 +3713,7 @@ export function MarketSection(props: MarketSectionProps) {
   )
 
   /** Installed plugins the market itself cannot group (#60). */
-  const groupableNames = Object.keys(installed).filter(name => name !== 'dsh-market' && name !== 'dshmarket')
+  const groupableNames = Object.keys(installed).filter(name => name !== 'dsh-market' && name !== 'dshmarket' && name !== '@gausszhou/dsh-market')
   /** Names already inside some group; everything else shows under "ungrouped". */
   const groupedNames = useMemo(() => new Set(Object.values(groups).flat()), [groups])
   const ungroupedNames = groupableNames.filter(name => !groupedNames.has(name))
@@ -3757,10 +3759,12 @@ export function MarketSection(props: MarketSectionProps) {
           {/* A quiet pointer back to the project — most visitors reach the
               market through a client that embeds it, with no other way to
               find the repo it came from. */}
-          <a className={css.repoLink} href="https://github.com/dsh-market/dsh-market" target="_blank" rel="noreferrer" title="dsh-market · GitHub">dsh-market</a>
+          <a className={css.repoLink} href="https://github.com/gausszhou/dsh-market" target="_blank" rel="noreferrer" title="dsh-market · GitHub">dsh-market</a>
           {version !== null && <span className={css.version} title={t('versionHint')}>v{version}</span>}
           {(() => {
-            const self = installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
+            const self = installed['@gausszhou/dsh-market'] !== undefined
+              ? '@gausszhou/dsh-market'
+              : installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
             const status = updates[self]
             return status && status.updateAvailable && !updatedNames.includes(self)
               && !ignoredUpdateSet.has(self)
@@ -4920,7 +4924,7 @@ export function MarketSection(props: MarketSectionProps) {
                                               >{t('restore')}</button>
                                             )
                                           : <span className={css.metaTag} title={t('upToDate')}>{t('upToDate')}</span>}
-                                {!missing && name !== 'dsh-market' && name !== 'dshmarket' && (
+                                {!missing && name !== 'dsh-market' && name !== 'dshmarket' && name !== '@gausszhou/dsh-market' && (
                                   removingName === name
                                     ? <Button variant="outline" size="sm" className={css.dangerBtn} disabled>{t('uninstalling')}</Button>
                                     : (

@@ -23,7 +23,7 @@ let calls: Array<{ path: string; body: unknown }> = []
 
 function stubFetch(options: {
   version?: string; restart?: boolean; latest?: string | null; restoreRequired?: boolean; removeOk?: boolean; error?: string; selfManaged?: boolean
-  kind?: string
+  kind?: string; enableSelfUpdate?: boolean
   channel?: string; channelSwitch?: string; channelError?: string
   region?: string; regionAuto?: boolean; regionError?: string; githubProxy?: string | null
   githubProxyCustom?: string | null; githubProxyManaged?: boolean; githubProxyError?: string
@@ -53,6 +53,10 @@ function stubFetch(options: {
         githubProxyCustom,
         githubProxyManaged: options.githubProxyManaged === true,
         selfManaged: options.selfManaged !== false,
+        // The stub defaults to ENABLED: these specs probe the update-offer
+        // mechanics, not the config default (pinned in routes.spec). The
+        // blocked-by-default card state has its own test below.
+        enableSelfUpdate: options.enableSelfUpdate !== false,
       })
     }
     if (path.includes('/dsh-market/updates')) {
@@ -140,6 +144,17 @@ describe('SettingsCard', () => {
     expect(screen.getByRole('button', { name: t('setSelfUpdate') })).toBeTruthy()
   })
 
+  it('names the blocked state instead of an update row when self-updates are disabled', async () => {
+    // The fork ships with enableSelfUpdate off: the card must say why there
+    // is no Update button, not read the absence as "up to date".
+    stubFetch({ enableSelfUpdate: false, latest: '9.9.9' })
+    await open()
+    await waitFor(() => { expect(screen.getByText(t('setSelfUpdateBlocked'))).toBeTruthy() })
+    expect(screen.getByText(t('setSelfUpdateBlockedHint'))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: t('setSelfUpdate') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('restoreOnline') })).toBeNull()
+  })
+
   it('names a newer release for a host-installed market without offering to apply it (#497)', async () => {
     stubFetch({ version: '1.38.1', latest: '1.41.0', kind: 'generation' })
     await open()
@@ -159,7 +174,7 @@ describe('SettingsCard', () => {
     fireEvent.click(screen.getByRole('button', { name: t('restoreContinue') }))
     await waitFor(() => {
       expect(calls.find(call => call.path.endsWith('/dsh-market/update'))?.body)
-        .toEqual({ name: 'dshmarket', restore: true })
+        .toEqual({ name: '@gausszhou/dsh-market', restore: true })
     })
   })
 

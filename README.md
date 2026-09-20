@@ -6,8 +6,8 @@
 
 English | [中文](README.zh.md)
 
-[![npm](https://img.shields.io/npm/v/dshmarket)](https://www.npmjs.com/package/dshmarket)
-[![stars](https://img.shields.io/github/stars/dsh-market/dsh-market?style=flat)](https://github.com/dsh-market/dsh-market)
+[![npm](https://img.shields.io/npm/v/%40gausszhou%2Fdsh-market)](https://www.npmjs.com/package/@gausszhou/dsh-market)
+[![stars](https://img.shields.io/github/stars/gausszhou/dsh-market?style=flat)](https://github.com/gausszhou/dsh-market)
 
 The plugin market inside DeepSeek Harness. Open Settings → **Plugin Market** → browse, search, one-click install.
 
@@ -18,7 +18,7 @@ One-click themes: install, switch live, no restart.
 ## Install
 
 ```sh
-dsh plugin --profile web add dshmarket
+dsh plugin --profile web add @gausszhou/dsh-market
 ```
 
 Restart `dsh web`, then open **Settings → Plugin Market**.
@@ -39,7 +39,7 @@ its own dsh: it may be older than the one `npm` would give you (#139).
 - **Themes** — a dedicated tab for community themes and skins: install → active immediately, switch with one click (themes are mutually exclusive, your choice survives restarts), uninstall to revert
 - **One-click install** — confirm the source, watch live progress; most plugins go live after a page refresh, no restart
 - **Backup & restore** — export your profile's plugin list and configuration as readable JSON, import it on another machine, store it on WebDAV with daily auto-backup, or sync through a private GitHub Gist; restores **merge** (plugins installed after the backup are kept), validate before writing, and roll back on failure
-- **Updates** — per-plugin update checks (npm version or pinned commit vs HEAD), one-click update, or update everything at once; the market updates itself the same way
+- **Updates** — per-plugin update checks (npm version or pinned commit vs HEAD), one-click update, or update everything at once. **This fork does not update itself by default** (`enableSelfUpdate` defaults to `false`); set it to `true` in the plugin configuration to restore the market's own update entry
 - **Resilient GitHub routes** — in the China download region, Git refs, README content, and avatars each keep their own fallback order. The market remembers the last working route, switches only after transport/HTTP/payload validation fails, and rejects proxy error pages disguised as HTTP 200. If every built-in route fails, **Settings → Plugins → Plugin configuration → GitHub acceleration** accepts one persistent custom HTTPS prefix; `DSHM_GITHUB_PROXY` remains the operator-owned override
 - **Public update API** — plugin-owned settings pages can use the versioned, capability-gated [update API v1](UPDATE-API-V1.md) (beta) instead of copying package-manager logic or depending on private Market UI responses
 - **Uninstall** — two-step confirm; plugins installed this session are removed live
@@ -70,12 +70,22 @@ Installs prefer repo-verified npm packages, then author-supplied prebuilt GitHub
 
   ```yaml
   - id: dsh-market
-    name: dshmarket
+    name: '@gausszhou/dsh-market'
     config:
       allowRestart: false   # NOT at the top level beside `name:`
   ```
 
   `GET /dsh-market/status` reports `"restart": false` once it has taken effect.
+
+  **Self-updates are off by default in this fork.** The market never offers
+  or applies its own update unless you re-enable it — again under `config:`:
+
+  ```yaml
+  - id: dsh-market
+    name: '@gausszhou/dsh-market'
+    config:
+      enableSelfUpdate: true
+  ```
 - For terminal-attached launches, the detached replacement keeps running after the original terminal closes
 - Listing ≠ endorsement: plugins are third-party code, install sources you trust
 
@@ -141,4 +151,4 @@ dsh plugin --profile web add @liustack/modlens
 
 ## License
 
-MIT · [dshmarket.com](https://dshmarket.com)
+MIT · [github.com/gausszhou/dsh-market](https://github.com/gausszhou/dsh-market)

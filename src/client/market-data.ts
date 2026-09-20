@@ -157,7 +157,7 @@ export interface MarketStatus {
   version?: string
   /** Whether the profile package manager owns the market dependency. */
   selfManaged?: boolean
-  /** Whether the market may update itself (config enableSelfUpdate; default true). */
+  /** Whether the market may update itself (config enableSelfUpdate; default false). */
   enableSelfUpdate?: boolean
   /** Blacklist tokens from the market config; matching entries are hidden from the lists. */
   blacklist?: string[]
@@ -364,7 +364,9 @@ export interface ListQuery {
  * standing in it."
  */
 export function isMarketItself(plugin: Pick<RegistryPlugin, 'name' | 'npm'>): boolean {
-  return plugin.name === 'dsh-market' || plugin.npm === 'dshmarket'
+  return plugin.name === 'dsh-market'
+    || plugin.npm === 'dshmarket'
+    || plugin.npm === '@gausszhou/dsh-market'
 }
 
 /**

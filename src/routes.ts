@@ -127,11 +127,10 @@ export interface MarketConfig {
    */
   blacklist?: string[]
   /**
-   * Whether the market may update ITSELF. Default true. Set false to block
-   * the market's own update end to end: update detection excludes it, the
-   * update route refuses it, and the settings card stops offering it. Other
-   * packages never follow this setting — a block on the market is a statement
-   * about the market only.
+   * Whether the market may update ITSELF. Default false — the fork does not
+   * self-update unless explicitly enabled. Set true to let the market offer
+   * and apply its own updates again. Other packages never follow this
+   * setting — a decision about the market is about the market only.
    */
   enableSelfUpdate?: boolean
 }
@@ -183,7 +182,7 @@ export function marketVersion(): string {
 }
 
 /** The market's own package names, as they appear in a profile manifest. */
-const SELF_NAMES = new Set(['dshmarket', 'dsh-market'])
+const SELF_NAMES = new Set(['@gausszhou/dsh-market', 'dshmarket', 'dsh-market'])
 
 /**
  * Rebuild a GitHub target for an update.
@@ -1302,7 +1301,7 @@ export function mountMarketRoutes(
     const channel = activeChannel()
     const installed = readInstalled(config.profile, activeProfileDir)
     const selfNames = Object.keys(installed).filter(name => SELF_NAMES.has(name))
-    const selfUpdateEnabled = config.enableSelfUpdate !== false
+    const selfUpdateEnabled = config.enableSelfUpdate === true
     const channelFor = new Map(
       selfNames
         .filter(name => selfUpdateEnabled)
@@ -2233,7 +2232,7 @@ export function mountMarketRoutes(
             const body = (await readJsonBody(request)) as { name?: unknown; enabled?: unknown }
             const name = typeof body.name === 'string' ? body.name : ''
             const enabled = body.enabled === true
-            if (name === 'dsh-market' || name === 'dshmarket') {
+            if (name === '@gausszhou/dsh-market' || name === 'dsh-market' || name === 'dshmarket') {
               sendJson(response, 400, { error: 'the market cannot be disabled from its own page; use the dsh CLI' })
               return
             }
@@ -2603,12 +2602,12 @@ export function mountMarketRoutes(
           blacklist: normalizeBlacklist(config.blacklist),
           // Named so the card can say WHY it is not offering an update — a
           // missing button is otherwise read as "up to date".
-          enableSelfUpdate: config.enableSelfUpdate !== false,
+          enableSelfUpdate: config.enableSelfUpdate === true,
           // Named so the UI can say WHY the button is gone. A blank
           // "no restart button" is the state #229 reported as broken.
           supervisor: detectedSupervisor(),
           debugger: detectedDebugger(),
-          selfManaged: installed.dshmarket !== undefined || installed['dsh-market'] !== undefined,
+          selfManaged: installed['@gausszhou/dsh-market'] !== undefined || installed.dshmarket !== undefined || installed['dsh-market'] !== undefined,
           installed,
         })
       },
@@ -2974,7 +2973,7 @@ sendJson(response, 200, { updates })
             // detection already excludes the market (updateCheckInputs), but
             // a stale page could still POST the route, and the route is where
             // "off" has to be enforced rather than reported.
-            if (SELF_NAMES.has(name) && config.enableSelfUpdate === false) {
+            if (SELF_NAMES.has(name) && config.enableSelfUpdate !== true) {
               sendJson(response, 400, {
                 error: '市场自身的更新已在配置中停用（enableSelfUpdate: false）。需要更新时，请先在插件配置页把它改回 true 再试。 / The market\'s own updates are disabled by configuration (enableSelfUpdate: false). Set it back to true on the plugin configuration page to update the market.',
               })
@@ -3930,7 +3929,7 @@ sendJson(response, 200, { updates })
               return
             }
             const installed = readInstalled(config.profile, activeProfileDir)
-            const selfName = ['dshmarket', 'dsh-market'].find(candidate => installed[candidate] !== undefined)
+            const selfName = ['@gausszhou/dsh-market', 'dshmarket', 'dsh-market'].find(candidate => installed[candidate] !== undefined)
             if (selfName === undefined) {
               sendJson(response, 400, { error: 'the market is not an installed dependency of this profile' })
               return
@@ -4211,7 +4210,7 @@ sendJson(response, 200, { updates })
             // has a concrete thing to go fix, so an override would only help
             // them break their next boot.
             const force = body.force === true
-            if (name === 'dsh-market' || name === 'dshmarket') {
+            if (name === '@gausszhou/dsh-market' || name === 'dsh-market' || name === 'dshmarket') {
               sendJson(response, 400, { error: 'the market cannot uninstall itself; use the dsh CLI' })
               return
             }

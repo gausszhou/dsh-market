@@ -837,36 +837,40 @@ describe('normalizeBlacklist', () => {
 })
 
 describe('enableSelfUpdate config', () => {
-  it('reports self-updates enabled by default in the status payload', async () => {
+  it('reports self-updates disabled by default in the status payload', async () => {
+    // The fork ships without self-update; the card must say so rather than
+    // reading the absence of an update button as "up to date".
     const res = await hit(routes, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
-    expect(res.status).toBe(200)
-    expect(jsonBody(res).enableSelfUpdate).toBe(true)
-  })
-
-  it('reports self-updates disabled when the config says so', async () => {
-    const blocked = mount(undefined, { enableSelfUpdate: false }).routes
-    const res = await hit(blocked, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
     expect(res.status).toBe(200)
     expect(jsonBody(res).enableSelfUpdate).toBe(false)
   })
 
-  it('refuses a self-update when enableSelfUpdate is false', async () => {
-    const blocked = mount(undefined, { enableSelfUpdate: false }).routes
-    const res = await hit(blocked, '/dsh-market/update', post('/dsh-market/update', { name: 'dshmarket' }))
-    expect(res.status).toBe(400)
-    expect(String(jsonBody(res).error)).toContain('enableSelfUpdate')
+  it('reports self-updates enabled when the config says so', async () => {
+    const enabled = mount(undefined, { enableSelfUpdate: true }).routes
+    const res = await hit(enabled, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).enableSelfUpdate).toBe(true)
   })
 
-  it('does not apply the self-update guard when enableSelfUpdate is unset', async () => {
-    const res = await hit(routes, '/dsh-market/update', post('/dsh-market/update', { name: 'dshmarket' }))
+  it('refuses a self-update by default, by either of the market\'s own names', async () => {
+    for (const name of ['dshmarket', '@gausszhou/dsh-market']) {
+      const res = await hit(routes, '/dsh-market/update', post('/dsh-market/update', { name }))
+      expect(res.status, name).toBe(400)
+      expect(String(jsonBody(res).error), name).toContain('enableSelfUpdate')
+    }
+  })
+
+  it('does not apply the self-update guard when enableSelfUpdate is true', async () => {
+    const enabled = mount(undefined, { enableSelfUpdate: true }).routes
+    const res = await hit(enabled, '/dsh-market/update', post('/dsh-market/update', { name: 'dshmarket' }))
     // Falls through to the ordinary path (no profile manifest yet → its own
     // error) — never the config-block message.
     expect(String((res.json() as { error?: unknown }).error ?? '')).not.toContain('enableSelfUpdate')
   })
 
-  it('omits the installed market from update checks when self-updates are disabled', async () => {
+  it('omits the installed market from update checks while self-updates are disabled (the default)', async () => {
     writeProfile(['dshmarket'])
-    const blocked = mount(undefined, { enableSelfUpdate: false }).routes
+    const blocked = mount().routes
     // The route's catalog source lookup would otherwise reach the network;
     // a failing stub is the same answer the unit lane gives every spec.
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })))
@@ -875,6 +879,20 @@ describe('enableSelfUpdate config', () => {
       expect(res.status).toBe(200)
       const updates = (jsonBody(res).updates ?? {}) as Record<string, unknown>
       expect(updates['dshmarket']).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('includes the installed market in update checks when explicitly enabled', async () => {
+    writeProfile(['dshmarket'])
+    const enabled = mount(undefined, { enableSelfUpdate: true }).routes
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })))
+    try {
+      const res = await hit(enabled, '/dsh-market/updates', { method: 'GET', url: '/dsh-market/updates' })
+      expect(res.status).toBe(200)
+      const updates = (jsonBody(res).updates ?? {}) as Record<string, unknown>
+      expect(updates['dshmarket']).toBeDefined()
     } finally {
       vi.unstubAllGlobals()
     }

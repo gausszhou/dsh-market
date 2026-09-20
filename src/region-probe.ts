@@ -33,7 +33,9 @@ import { REGIONS, routesFor, type Region } from './regions.ts'
  * packument. A probe that downloads a third of a megabyte to answer "which
  * of these is closer" has spent more than the answer is worth.
  */
-const PROBE_PATH = 'dshmarket/latest'
+// A scoped package's registry path must URL-encode the slash: the probe
+// asks every mirror for `<registry>/@gausszhou%2fdsh-market/latest`.
+const PROBE_PATH = '@gausszhou%2fdsh-market/latest'
 
 /**
  * Ask every region's registry the same question; return whichever answers
