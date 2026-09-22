@@ -12,7 +12,7 @@ import type { AgentsServiceLike } from './agents.ts'
 export const name = 'dsh-market'
 
 /** Optional cordis.yml configuration; profile defaults to `web`. */
-export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots' | 'blacklist' | 'enableSelfUpdate' | 'hideOutdatedPlugins'>>
+export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots' | 'blacklist' | 'categoryBlacklist' | 'enableSelfUpdate' | 'hideOutdatedPlugins'>>
 
 /** Structural subset of DSH Desktop's public `desktopProfiles` contract. */
 interface DesktopProfilesLike {
@@ -70,6 +70,7 @@ export function apply(ctx: Context, config?: Config): void {
         allowRestart: config?.allowRestart,
         maxSnapshots: config?.maxSnapshots,
         blacklist: config?.blacklist,
+        categoryBlacklist: config?.categoryBlacklist,
         enableSelfUpdate: config?.enableSelfUpdate,
         hideOutdatedPlugins: config?.hideOutdatedPlugins,
       }
@@ -97,6 +98,7 @@ export function apply(ctx: Context, config?: Config): void {
         allowRestart: false,
         maxSnapshots: config?.maxSnapshots,
         blacklist: config?.blacklist,
+        categoryBlacklist: config?.categoryBlacklist,
         enableSelfUpdate: config?.enableSelfUpdate,
         hideOutdatedPlugins: config?.hideOutdatedPlugins,
       }

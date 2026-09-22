@@ -1062,4 +1062,37 @@ describe('isBlacklisted / visiblePlugins blacklist', () => {
     })
     expect(out.map(entry => entry.name)).toEqual(['keep'])
   })
+
+  it('visiblePlugins drops entries carrying any blocked category', () => {
+    const tool = plugin({ name: 'tool-a', category: 'tools' })
+    const hybrid = plugin({ name: 'hybrid', category: ['theme', 'tools'] })
+    const theme = plugin({ name: 'theme-a', category: 'theme' })
+    const keep = plugin({ name: 'keep', category: 'skill' })
+    // Blocking one category removes every entry that carries it — a hybrid
+    // theme+tools entry is gone with the themes, not kept for its tools half.
+    expect(visiblePlugins([tool, hybrid, theme, keep], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(['theme']),
+    }).map(entry => entry.name)).toEqual(['tool-a', 'keep'])
+    // Category ids are compared lowercased, so a catalog's capitalized slug
+    // still matches the server-normalized (lowercase) blocked token.
+    expect(visiblePlugins([plugin({ name: 'theme-a', category: 'Theme' })], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(['theme']),
+    })).toEqual([])
+    // Tokens arrive pre-normalized from the server; an unnormalized token is
+    // honestly a non-match — pins the same contract as `isBlacklisted`.
+    expect(visiblePlugins([theme], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(['THEME']),
+    })).toEqual([theme])
+    // An undefined or empty set hides nothing.
+    expect(visiblePlugins([theme], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+    }).map(entry => entry.name)).toEqual(['theme-a'])
+    expect(visiblePlugins([theme], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(),
+    }).map(entry => entry.name)).toEqual(['theme-a'])
+  })
 })

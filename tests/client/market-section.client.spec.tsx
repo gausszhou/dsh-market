@@ -702,6 +702,48 @@ describe('MarketSection (jsdom)', () => {
     expect(screen.queryByText(en.outdatedFilterActive.replace('{0}', '2'))).toBeNull()
   })
 
+  it('hides entries of blacklisted categories from Discover and Themes, and says so', async () => {
+    const plugins = [
+      { ...REGISTRY.plugins[0], url: 'https://github.com/alice/dsh-loop' },  // tools + skill
+      { ...REGISTRY.plugins[2], url: 'https://github.com/carol/whale-skin' }, // theme
+    ]
+    const registry = { source: 'live', hostVersion: '0.1.2-alpha.2', registry: { ...REGISTRY, count: plugins.length, plugins } }
+    // The Themes tab only exists when the composition has a theme service.
+    // The snapshot must be referentially stable — useSyncExternalStore treats
+    // a fresh object per read as an endless change feed.
+    const THEME_SNAPSHOT = { preference: 'light', themes: [] as Array<{ id: string }> }
+    const themeStore = { subscribe: () => () => {}, getSnapshot: () => THEME_SNAPSHOT }
+    stubFetch({
+      '/dsh-market/registry': registry,
+      // The default-on host filter is OFF here so whale-skin goes missing
+      // ONLY because its category is blacklisted, not for its manifest.
+      '/dsh-market/status': { active: false, pnpm: true, boot: 'boot-1', restart: true, installed: {}, hideOutdatedPlugins: false, categoryBlacklist: ['theme'] },
+    })
+    render(<MarketSection {...props()} themeStore={themeStore} />)
+    await screen.findByText('dsh-loop')
+    expect(screen.queryByText('whale-skin')).toBeNull()
+    // The theme category pill is gone too — its label would otherwise be a
+    // second "Themes" button next to the tab.
+    expect(screen.getAllByRole('button', { name: en.tabThemes })).toHaveLength(1)
+
+    // The Themes tab itself stays: the catalog still carries themes, so it
+    // shows the empty state and says why.
+    fireEvent.click(screen.getByRole('button', { name: en.tabThemes }))
+    await screen.findByText(en.empty)
+    expect(screen.getByText(en.categoryBlacklistFilteredHint)).toBeTruthy()
+
+    // No category blocking, and the theme entry comes back.
+    cleanup()
+    stubFetch({
+      '/dsh-market/registry': registry,
+      '/dsh-market/status': { active: false, pnpm: true, boot: 'boot-1', restart: true, installed: {}, hideOutdatedPlugins: false },
+    })
+    render(<MarketSection {...props()} themeStore={themeStore} />)
+    await screen.findByText('whale-skin')
+    // Two "Themes" now: the tab and the restored category pill.
+    expect(screen.getAllByRole('button', { name: en.tabThemes })).toHaveLength(2)
+  })
+
   it('the install dialog opens with Confirm/Cancel and closes on cancel', async () => {
     render(<MarketSection {...props()} />)
     await screen.findByText('dsh-loop')

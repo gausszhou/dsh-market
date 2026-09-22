@@ -105,6 +105,22 @@ Installs prefer repo-verified npm packages, then author-supplied prebuilt GitHub
       hideOutdatedPlugins: false
   ```
 
+  **Whole categories can be hidden too.** `categoryBlacklist` takes catalog
+  category ids — blocking `theme` removes every theme entry from Discover and
+  from the Themes tab, for instance (give it a try if you never use themes):
+
+  ```yaml
+  - id: dsh-market
+    name: '@gausszhou/dsh-market'
+    config:
+      categoryBlacklist:
+        - theme
+  ```
+
+  Like the entry blacklist, it is a config-report field: edits reach the
+  browser without a reload, and the catalogue counts say nothing until a
+  blocked category actually removes entries.
+
   Reading those manifests is a bounded, cached lookup (24h, on disk), so the
   first catalog open after a cold cache checks a few thousand packages once;
   after that it is instant. Turning the filter off skips the lookup for the

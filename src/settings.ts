@@ -96,6 +96,8 @@ export interface MarketSettings {
   allowRestart: boolean
   /** Catalog blacklist tokens; matching entries are hidden from the lists. */
   blacklist: string[]
+  /** Catalog category ids whose entries are hidden from the lists. */
+  categoryBlacklist: string[]
   /** Whether the market may update ITSELF; default off — needs an explicit true. */
   enableSelfUpdate: boolean
   /** Hide catalog entries that do not declare support for the running DSH: a passed ceiling or no declaration at all. */
@@ -105,6 +107,7 @@ export interface MarketSettings {
 export const MarketSettings: z<MarketSettings> = z.object({
   allowRestart: z.boolean().default(true),
   blacklist: z.array(z.string()).default([]),
+  categoryBlacklist: z.array(z.string()).default([]),
   enableSelfUpdate: z.boolean().default(false),
   hideOutdatedPlugins: z.boolean().default(true),
 })
@@ -132,7 +135,7 @@ export function installDesktopMarketSettings(ctx: Context): void {
  * @param ctx - the plugin context owning the wiring.
  * @param resolved - the live config object the routes read.
  */
-export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[]; enableSelfUpdate?: boolean; hideOutdatedPlugins?: boolean }): void {
+export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[]; categoryBlacklist?: string[]; enableSelfUpdate?: boolean; hideOutdatedPlugins?: boolean }): void {
   // The switch must show what the routes will actually DO, which since #229
   // is not simply "unset means on": under a detected supervisor an unset
   // value means off, because the supervisor owns restarts. Asking
@@ -142,6 +145,7 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
   const entry: MarketSettings = {
     allowRestart: restartAllowed(resolved),
     blacklist: resolved.blacklist ?? [],
+    categoryBlacklist: resolved.categoryBlacklist ?? [],
     enableSelfUpdate: resolved.enableSelfUpdate ?? false,
     // Unset means ON here, unlike enableSelfUpdate: the filter only hides a
     // plugin that does not declare support reaching this host — a passed
@@ -156,6 +160,7 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
   const apply = (): void => {
     resolved.allowRestart = source().allowRestart
     resolved.blacklist = source().blacklist
+    resolved.categoryBlacklist = source().categoryBlacklist
     resolved.enableSelfUpdate = source().enableSelfUpdate
     resolved.hideOutdatedPlugins = source().hideOutdatedPlugins
   }

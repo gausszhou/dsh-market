@@ -99,6 +99,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			favoritesClearStale: "清除失效收藏",
 			favoritesClearingStale: "清除中…",
 			blacklistFilteredHint: "有些条目已被黑名单过滤，可在本插件配置中调整。",
+			categoryBlacklistFilteredHint: "有些分类已被屏蔽（如主题与外观），其中的插件不会显示；可在本插件配置中调整。",
 			tabDiscover: "发现",
 			tabFavorites: "收藏",
 			tabInstalled: "已安装",
@@ -638,6 +639,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			favoritesClearStale: "Remove stale favorites",
 			favoritesClearingStale: "Removing…",
 			blacklistFilteredHint: "Some entries are hidden by the configured blacklist — edit it in this plugin's configuration.",
+			categoryBlacklistFilteredHint: "Some categories are blacklisted (e.g. Themes & Appearance) and their plugins are hidden — edit it in this plugin's configuration.",
 			tabDiscover: "Discover",
 			tabFavorites: "Favorites",
 			tabInstalled: "Installed",
@@ -1504,6 +1506,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			return plugins.flatMap((plugin, index) => {
 				if (isMarketItself(plugin)) return [];
 				if (options.blacklist !== void 0 && isBlacklisted(plugin, options.blacklist)) return [];
+				const blockedCategories = options.categoryBlacklist;
+				if (blockedCategories !== void 0 && blockedCategories.size > 0 && pluginCategories(plugin).some((id) => blockedCategories.has(id.toLowerCase()))) return [];
 				const categories = pluginCategories(plugin);
 				if (options.category !== "all" && !categories.includes(options.category)) return [];
 				if (options.sinceDays !== void 0 && !withinDays(plugin.added, options.sinceDays)) return [];
@@ -6439,6 +6443,13 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			*/
 			const [blacklist, setBlacklist] = (0, react.useState)([]);
 			const blacklistSet = (0, react.useMemo)(() => new Set(blacklist), [blacklist]);
+			/**
+			* Category ids whose entries are hidden (config `categoryBlacklist`, from
+			* the status payload). Same contract as `blacklist`: a filter the lists
+			* match entries against, never a management surface.
+			*/
+			const [categoryBlacklist, setCategoryBlacklist] = (0, react.useState)([]);
+			const categoryBlacklistSet = (0, react.useMemo)(() => new Set(categoryBlacklist), [categoryBlacklist]);
 			/** Non-live activation results from the last operation, shown as a banner. */
 			const [activationWarnings, setActivationWarnings] = (0, react.useState)([]);
 			const [hostDependencyFindings, setHostDependencyFindings] = (0, react.useState)([]);
@@ -6703,6 +6714,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 					setSupervisor(typeof status.supervisor === "string" ? status.supervisor : null);
 					setDebuggerLatch(typeof status.debugger === "string" ? status.debugger : null);
 					if (Array.isArray(status.blacklist)) setBlacklist(status.blacklist);
+					if (Array.isArray(status.categoryBlacklist)) setCategoryBlacklist(status.categoryBlacklist);
 					if (typeof status.hideOutdatedPlugins === "boolean") setHideOutdatedPlugins(status.hideOutdatedPlugins);
 					if (typeof status.version === "string" && status.version !== "") setVersion(status.version);
 				}).catch(() => {});
@@ -6931,7 +6943,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				hostCompatibility,
 				compatibleWithHost,
 				hideOutdatedPlugins,
-				blacklist: blacklistSet
+				blacklist: blacklistSet,
+				categoryBlacklist: categoryBlacklistSet
 			}), [
 				data,
 				q,
@@ -6943,7 +6956,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				hostCompatibility,
 				compatibleWithHost,
 				hideOutdatedPlugins,
-				blacklistSet
+				blacklistSet,
+				categoryBlacklistSet
 			]);
 			/**
 			* How many entries the host filter actually removed from the list the
@@ -6964,7 +6978,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 					sinceDays: timeRange === "all" ? void 0 : TIME_RANGE_DAYS[timeRange],
 					hostCompatibility,
 					compatibleWithHost,
-					blacklist: blacklistSet
+					blacklist: blacklistSet,
+					categoryBlacklist: categoryBlacklistSet
 				}).length - plugins.length;
 			}, [
 				data,
@@ -6978,6 +6993,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				compatibleWithHost,
 				hideOutdatedPlugins,
 				blacklistSet,
+				categoryBlacklistSet,
 				plugins
 			]);
 			const { currentPage, totalPages, pageSize, goToPage, changePageSize } = usePagination(plugins.length, [
@@ -7019,7 +7035,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				sinceDays: themeTimeRange === "all" ? void 0 : TIME_RANGE_DAYS[themeTimeRange],
 				hostCompatibility,
 				hideOutdatedPlugins,
-				blacklist: blacklistSet
+				blacklist: blacklistSet,
+				categoryBlacklist: categoryBlacklistSet
 			}), [
 				data,
 				qThemes,
@@ -7029,7 +7046,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				themeTimeRange,
 				hostCompatibility,
 				hideOutdatedPlugins,
-				blacklistSet
+				blacklistSet,
+				categoryBlacklistSet
 			]);
 			/** Same accounting as `hostHidden`, for the Themes tab's own count. */
 			const themeHostHidden = (0, react.useMemo)(() => {
@@ -7042,7 +7060,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 					sort: `${themeSortField}-${themeSortDir}`,
 					sinceDays: themeTimeRange === "all" ? void 0 : TIME_RANGE_DAYS[themeTimeRange],
 					hostCompatibility,
-					blacklist: blacklistSet
+					blacklist: blacklistSet,
+					categoryBlacklist: categoryBlacklistSet
 				}).length - themePlugins$1.length;
 			}, [
 				data,
@@ -7054,6 +7073,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				hostCompatibility,
 				hideOutdatedPlugins,
 				blacklistSet,
+				categoryBlacklistSet,
 				themePlugins$1
 			]);
 			const themePagination = usePagination(themePlugins$1.length, [
@@ -8674,7 +8694,10 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 					})]
 				}, "th-" + id);
 			};
-			const categories = data === null ? [] : Object.keys(data.categories);
+			const categories = data === null ? [] : Object.keys(data.categories).filter((id) => !categoryBlacklistSet.has(id));
+			(0, react.useEffect)(() => {
+				if (cat !== "all" && categoryBlacklistSet.has(cat)) setCat("all");
+			}, [categoryBlacklistSet, cat]);
 			(0, react.useLayoutEffect)(() => {
 				setVisibleCats(null);
 				setVisibleCatsOneRow(null);
@@ -9520,6 +9543,10 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 										className: Market_module_css_default.hostFilterNote,
 										children: t("blacklistFilteredHint")
 									}),
+									categoryBlacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("categoryBlacklistFilteredHint")
+									}),
 									hideOutdatedPlugins && hostHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: Market_module_css_default.hostFilterNote,
 										children: t("outdatedFilteredHint")
@@ -9694,6 +9721,10 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 									blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: Market_module_css_default.hostFilterNote,
 										children: t("blacklistFilteredHint")
+									}),
+									categoryBlacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("categoryBlacklistFilteredHint")
 									}),
 									hideOutdatedPlugins && themeHostHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: Market_module_css_default.hostFilterNote,

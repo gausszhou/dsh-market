@@ -93,6 +93,18 @@ dsh plugin --profile web add @gausszhou/dsh-market
       hideOutdatedPlugins: false
   ```
 
+  **也可以整类屏蔽。** `categoryBlacklist` 接收目录的分类 id——比如屏蔽 `theme` 后，「发现」和「主题」页里的所有主题条目都会消失（不用主题的话可以试试）：
+
+  ```yaml
+  - id: dsh-market
+    name: '@gausszhou/dsh-market'
+    config:
+      categoryBlacklist:
+        - theme
+  ```
+
+  和条目黑名单一样，这也是 config-report 字段：在设置里改完无需刷新页面即生效；有被屏蔽分类实际移除条目时，列表会给出提示。
+
   读取这些 manifest 是有上限、带缓存的查询（磁盘缓存 24 小时）：冷缓存后第一次打开目录会一次性核对几千个包，之后就是瞬时的；关掉这个过滤则完全跳过这次查询。
 - 从终端启动时，替代进程脱离原终端，关闭原终端后仍会继续运行
 - 收录 ≠ 背书:插件是第三方代码,请只安装你信任的来源

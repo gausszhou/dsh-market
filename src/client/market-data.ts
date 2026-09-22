@@ -388,6 +388,12 @@ export interface ListQuery {
    * hidden. Absent/empty means no blacklist is configured.
    */
   blacklist?: ReadonlySet<string>
+  /**
+   * Category ids whose entries are hidden (config `categoryBlacklist`): an
+   * entry carrying ANY blocked category is dropped from every list that
+   * reads the catalog. Absent/empty means no category blocking.
+   */
+  categoryBlacklist?: ReadonlySet<string>
 }
 
 /**
@@ -561,6 +567,9 @@ export function visiblePlugins(plugins: RegistryPlugin[], options: ListQuery): R
   const scored = plugins.flatMap((plugin, index) => {
     if (isMarketItself(plugin)) return []
     if (options.blacklist !== undefined && isBlacklisted(plugin, options.blacklist)) return []
+    const blockedCategories = options.categoryBlacklist
+    if (blockedCategories !== undefined && blockedCategories.size > 0
+      && pluginCategories(plugin).some(id => blockedCategories.has(id.toLowerCase()))) return []
     const categories = pluginCategories(plugin)
     if (options.category !== 'all' && !categories.includes(options.category)) return []
     if (options.sinceDays !== undefined && !withinDays(plugin.added, options.sinceDays)) return []

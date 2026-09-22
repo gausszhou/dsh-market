@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dump } from 'js-yaml'
-import { mountMarketRoutes, normalizeBlacklist, type MarketConfig, type MarketHost } from '../src/routes.ts'
+import { mountMarketRoutes, normalizeBlacklist, normalizeCategoryBlacklist, type MarketConfig, type MarketHost } from '../src/routes.ts'
 import { sameOrigin } from '../src/http.ts'
 import * as orderApi from '../src/order.ts'
 import type { PluginCommandRuntime } from '../src/dsh-cli.ts'
@@ -836,6 +836,28 @@ describe('normalizeBlacklist', () => {
   })
 })
 
+describe('normalizeCategoryBlacklist', () => {
+  it('passes clean category ids through trimmed, lowercased and de-duplicated', () => {
+    expect(normalizeCategoryBlacklist([' Theme ', 'theme', 'tools']))
+      .toEqual(['theme', 'tools'])
+  })
+
+  it('drops junk: non-strings, blanks, oversized values and non-arrays', () => {
+    expect(normalizeCategoryBlacklist(['theme', 42, null, '', '   ', 'x'.repeat(201)]))
+      .toEqual(['theme'])
+    expect(normalizeCategoryBlacklist(undefined)).toEqual([])
+    expect(normalizeCategoryBlacklist('not-an-array')).toEqual([])
+  })
+
+  it('shares the blacklist cap', () => {
+    const many = Array.from({ length: 250 }, (_, index) => `cat-${index}`)
+    const out = normalizeCategoryBlacklist(many)
+    expect(out).toHaveLength(200)
+    expect(out[0]).toBe('cat-0')
+    expect(out[199]).toBe('cat-199')
+  })
+})
+
 describe('enableSelfUpdate config', () => {
   it('reports self-updates disabled by default in the status payload', async () => {
     // The fork ships without self-update; the card must say so rather than
@@ -917,5 +939,20 @@ describe('hideOutdatedPlugins config', () => {
     const on = mount(undefined, { hideOutdatedPlugins: true }).routes
     const explicit = await hit(on, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
     expect(jsonBody(explicit).hideOutdatedPlugins).toBe(true)
+  })
+})
+
+describe('categoryBlacklist config', () => {
+  it('reports an empty category blacklist by default, as a config-report field', async () => {
+    const res = await hit(routes, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).categoryBlacklist).toEqual([])
+  })
+
+  it('reports configured category ids normalized for the browser', async () => {
+    const mounted = mount(undefined, { categoryBlacklist: [' Theme ', 'theme', 'tools'] }).routes
+    const res = await hit(mounted, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).categoryBlacklist).toEqual(['theme', 'tools'])
   })
 })

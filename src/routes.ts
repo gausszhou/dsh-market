@@ -127,6 +127,14 @@ export interface MarketConfig {
    */
   blacklist?: string[]
   /**
+   * Category blacklist: catalog category ids (`theme`, `tools`, ...) whose
+   * entries are hidden from the Discover and Themes lists — blocking
+   * "Themes & Appearance" removes every theme entry, for instance. An entry
+   * carrying ANY blocked category is hidden. Configurable through the
+   * profile patch and this plugin's settings page.
+   */
+  categoryBlacklist?: string[]
+  /**
    * Whether the market may update ITSELF. Default false — the fork does not
    * self-update unless explicitly enabled. Set true to let the market offer
    * and apply its own updates again. Other packages never follow this
@@ -170,6 +178,17 @@ export function normalizeBlacklist(raw: unknown): string[] {
     if (out.length >= MAX_BLACKLIST) break
   }
   return out
+}
+
+/**
+ * Normalize the configured category blacklist for the client. Same contract
+ * as `normalizeBlacklist` — trimmed, lowercased, de-duplicated, capped —
+ * because it is the same shape of filter: tokens the browser matches catalog
+ * entries against as-is. Categories are catalog ids (`theme`, `tools`, ...),
+ * and a hand-written `Theme` becomes `theme`, which is what the catalog uses.
+ */
+export function normalizeCategoryBlacklist(raw: unknown): string[] {
+  return normalizeBlacklist(raw)
 }
 
 /**
@@ -2610,6 +2629,9 @@ export function mountMarketRoutes(
           // as restart/githubProxyManaged so a settings edit lands without a
           // page reload.
           blacklist: normalizeBlacklist(config.blacklist),
+          // Same "config report" payload, so a category-blocking settings
+          // edit lands without a page reload too.
+          categoryBlacklist: normalizeCategoryBlacklist(config.categoryBlacklist),
           // Named so the card can say WHY it is not offering an update — a
           // missing button is otherwise read as "up to date".
           enableSelfUpdate: config.enableSelfUpdate === true,

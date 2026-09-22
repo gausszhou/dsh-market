@@ -51,6 +51,15 @@ describe('MarketSettings schema', () => {
       .toEqual(['dsh-noise', 'owner/repo'])
   })
 
+  it('defaults the category blacklist to empty', () => {
+    expect(MarketSettings({}).categoryBlacklist).toEqual([])
+  })
+
+  it('accepts configured category ids verbatim', () => {
+    expect(MarketSettings({ categoryBlacklist: ['theme', 'tools'] }).categoryBlacklist)
+      .toEqual(['theme', 'tools'])
+  })
+
   it('defaults enableSelfUpdate to off', () => {
     // The fork ships without self-update: the market must never offer or
     // apply its own update unless explicitly enabled.
@@ -92,7 +101,7 @@ describe('MarketSettings schema', () => {
     // The consequence itself is caught in layer 3 (tests/web/channel.e2e.ts)
     // against a real settings service, per this file's own rule about not
     // hand-writing a stand-in for a contract we did not author.
-    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart', 'blacklist', 'enableSelfUpdate', 'hideOutdatedPlugins'])
+    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart', 'blacklist', 'categoryBlacklist', 'enableSelfUpdate', 'hideOutdatedPlugins'])
   })
 })
 

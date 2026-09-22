@@ -1441,6 +1441,13 @@ export function MarketSection(props: MarketSectionProps) {
    */
   const [blacklist, setBlacklist] = useState<readonly string[]>([])
   const blacklistSet = useMemo(() => new Set(blacklist), [blacklist])
+  /**
+   * Category ids whose entries are hidden (config `categoryBlacklist`, from
+   * the status payload). Same contract as `blacklist`: a filter the lists
+   * match entries against, never a management surface.
+   */
+  const [categoryBlacklist, setCategoryBlacklist] = useState<readonly string[]>([])
+  const categoryBlacklistSet = useMemo(() => new Set(categoryBlacklist), [categoryBlacklist])
   /** Non-live activation results from the last operation, shown as a banner. */
   const [activationWarnings, setActivationWarnings] = useState<{ name: string; info: ActivationInfo }[]>([])
   const [hostDependencyFindings, setHostDependencyFindings] = useState<SharedHostPackageDependencyFinding[]>([])
@@ -1750,6 +1757,7 @@ export function MarketSection(props: MarketSectionProps) {
         setSupervisor(typeof status.supervisor === 'string' ? status.supervisor : null)
         setDebuggerLatch(typeof status.debugger === 'string' ? status.debugger : null)
         if (Array.isArray(status.blacklist)) setBlacklist(status.blacklist)
+        if (Array.isArray(status.categoryBlacklist)) setCategoryBlacklist(status.categoryBlacklist)
         // Absent means the host predates the setting. This fork's default is
         // ON, so a missing field must not read as "the operator turned it
         // off" — leave the initial true standing.
@@ -2001,8 +2009,9 @@ export function MarketSection(props: MarketSectionProps) {
       compatibleWithHost,
       hideOutdatedPlugins,
       blacklist: blacklistSet,
+      categoryBlacklist: categoryBlacklistSet,
     })),
-    [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, hideOutdatedPlugins, blacklistSet])
+    [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, hideOutdatedPlugins, blacklistSet, categoryBlacklistSet])
   /**
    * How many entries the host filter actually removed from the list the
    * user is looking at — a passed declared ceiling, or no declaration at
@@ -2020,8 +2029,9 @@ export function MarketSection(props: MarketSectionProps) {
       hostCompatibility,
       compatibleWithHost,
       blacklist: blacklistSet,
+      categoryBlacklist: categoryBlacklistSet,
     }).length - plugins.length
-  }, [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, hideOutdatedPlugins, blacklistSet, plugins])
+  }, [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, hideOutdatedPlugins, blacklistSet, categoryBlacklistSet, plugins])
   const { currentPage, totalPages, pageSize, goToPage, changePageSize } =
     usePagination(plugins.length, [q, cat, sortField, sortDir, timeRange, compatibleWithHost, hideOutdatedPlugins], scrollToTop)
   const pagePlugins = plugins.slice((currentPage - 1) * pageSize, currentPage * pageSize)
@@ -2064,8 +2074,9 @@ export function MarketSection(props: MarketSectionProps) {
       hostCompatibility,
       hideOutdatedPlugins,
       blacklist: blacklistSet,
+      categoryBlacklist: categoryBlacklistSet,
     })),
-    [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, hostCompatibility, hideOutdatedPlugins, blacklistSet])
+    [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, hostCompatibility, hideOutdatedPlugins, blacklistSet, categoryBlacklistSet])
   /** Same accounting as `hostHidden`, for the Themes tab's own count. */
   const themeHostHidden = useMemo(() => {
     if (data === null || !hideOutdatedPlugins) return 0
@@ -2075,8 +2086,9 @@ export function MarketSection(props: MarketSectionProps) {
       sinceDays: themeTimeRange === 'all' ? undefined : TIME_RANGE_DAYS[themeTimeRange],
       hostCompatibility,
       blacklist: blacklistSet,
+      categoryBlacklist: categoryBlacklistSet,
     }).length - themePlugins.length
-  }, [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, hostCompatibility, hideOutdatedPlugins, blacklistSet, themePlugins])
+  }, [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, hostCompatibility, hideOutdatedPlugins, blacklistSet, categoryBlacklistSet, themePlugins])
   const themePagination = usePagination(
     themePlugins.length, [qThemes, themeSortField, themeSortDir, themeTimeRange, hideOutdatedPlugins], scrollToTop)
   const themePagePlugins = themePlugins.slice(
@@ -3681,7 +3693,15 @@ export function MarketSection(props: MarketSectionProps) {
     )
   }
 
-  const categories = data === null ? [] : Object.keys(data.categories)
+  const categories = data === null
+    ? []
+    : Object.keys(data.categories).filter(id => !categoryBlacklistSet.has(id))
+
+  // A category that gets blocked after the user had it selected leaves them
+  // on an empty selection; jump back to the full list instead.
+  useEffect(() => {
+    if (cat !== 'all' && categoryBlacklistSet.has(cat)) setCat('all')
+  }, [categoryBlacklistSet, cat])
 
   useLayoutEffect(() => { setVisibleCats(null); setVisibleCatsOneRow(null) }, [lang, categories.length])
   useLayoutEffect(() => {
@@ -4337,6 +4357,7 @@ export function MarketSection(props: MarketSectionProps) {
                       ? <div className={css.empty}>
                           <div>{t('empty')}</div>
                           {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
+                          {categoryBlacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('categoryBlacklistFilteredHint')}</div>}
                           {hideOutdatedPlugins && hostHidden > 0 && <div className={css.hostFilterNote}>{t('outdatedFilteredHint')}</div>}
                         </div>
                       : (
@@ -4496,6 +4517,7 @@ export function MarketSection(props: MarketSectionProps) {
                         ? <div className={css.empty}>
                             <div>{t('empty')}</div>
                             {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
+                          {categoryBlacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('categoryBlacklistFilteredHint')}</div>}
                             {hideOutdatedPlugins && themeHostHidden > 0 && <div className={css.hostFilterNote}>{t('outdatedFilteredHint')}</div>}
                           </div>
                         : (
