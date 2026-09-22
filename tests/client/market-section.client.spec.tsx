@@ -44,7 +44,11 @@ function stubFetch(overrides: Record<string, unknown> = {}, mountPath = '') {
       : route === '/dsh-market/discovery-compatibility' ? {
           hostVersion: '0.1.2-alpha.2',
           plugins: Object.fromEntries(((body as { packages?: string[] } | undefined)?.packages ?? []).map(name => [name, {
-            status: 'unknown', basis: 'undeclared', requirement: null, declarations: [],
+            // A benign manifest verdict: the default-on host filter would
+            // otherwise hide every entry the moment its verdict lands, and
+            // most specs only care about catalog rendering.
+            status: 'compatible', basis: 'manifest', requirement: '^0.1.2-alpha.2',
+            declarations: [{ kind: 'engine', range: '^0.1.2-alpha.2' }], outdated: false,
           }])),
         }
       : route === '/dsh-market/installed' ? { profile: 'web', installed: {}, live: [], disabled: [], groups: {}, groupOrder: [], favorites: [] }
@@ -592,6 +596,10 @@ describe('MarketSection (jsdom)', () => {
         hostVersion: '0.1.2-alpha.2',
         registry: { ...REGISTRY, count: plugins.length, plugins },
       },
+      // With the default-on host filter, the undeclared entry would be hidden
+      // outright; this spec is about the opt-in v1 filter and the labels, so
+      // the host filter is turned off to keep every fixture row on screen.
+      '/dsh-market/status': { active: false, pnpm: true, boot: 'boot-1', restart: true, installed: {}, hideOutdatedPlugins: false },
       '/dsh-market/discovery-compatibility': (body: any) => ({
         hostVersion: '0.1.2-alpha.2',
         plugins: Object.fromEntries(body.packages.map((name: string) => [name, name === 'undeclared'
@@ -648,32 +656,37 @@ describe('MarketSection (jsdom)', () => {
     expect(screen.queryByText(/Filtering for DSH/)).toBeNull()
   })
 
-  it('hides entries whose declared DSH ceiling this host has passed, and says so', async () => {
+  it('hides entries that do not declare support for this DSH — outdated or undeclared — and says so', async () => {
     const plugins = [
       { ...REGISTRY.plugins[0], name: 'current', npm: 'current', url: 'https://github.com/a/current' },
       { ...REGISTRY.plugins[0], name: 'stale', npm: 'stale', url: 'https://github.com/a/stale' },
+      { ...REGISTRY.plugins[0], name: 'undeclared', npm: 'undeclared', url: 'https://github.com/a/undeclared' },
     ]
     const registry = { source: 'live', hostVersion: '0.1.5-rc.2', registry: { ...REGISTRY, count: plugins.length, plugins } }
-    // Both entries read as `compatible` — the sloppy `^0.0.1` case the status
-    // verdict forgives — so only the `outdated` flag can tell them apart.
+    // Both declared entries read as `compatible` — the sloppy `^0.0.1` case
+    // the status verdict forgives — so only the `outdated` flag can tell them
+    // apart; the undeclared one says nothing at all.
     const compatibility = (body: any) => ({
       hostVersion: '0.1.5-rc.2',
-      plugins: Object.fromEntries(body.packages.map((name: string) => [name, {
-        status: 'compatible',
-        basis: 'manifest',
-        requirement: '^0.0.1',
-        declarations: [{ kind: 'engine', range: '^0.0.1' }],
-        outdated: name === 'stale',
-      }])),
+      plugins: Object.fromEntries(body.packages.map((name: string) => [name, name === 'undeclared'
+        ? { status: 'unknown', basis: 'undeclared', requirement: null, declarations: [] }
+        : {
+            status: 'compatible',
+            basis: 'manifest',
+            requirement: '^0.0.1',
+            declarations: [{ kind: 'engine', range: '^0.0.1' }],
+            outdated: name === 'stale',
+          }])),
     })
     stubFetch({ '/dsh-market/registry': registry, '/dsh-market/discovery-compatibility': compatibility })
 
     render(<MarketSection {...props()} />)
-    // The fork ships with the filter ON: the stale entry never lands, and the
-    // list has to say why it is shorter than the catalog.
+    // The fork ships with the filter ON: the stale and undeclared entries
+    // never land, and the list has to say why it is shorter than the catalog.
     await screen.findByText('current')
-    await screen.findByText(en.outdatedFilterActive.replace('{0}', '1'))
+    await screen.findByText(en.outdatedFilterActive.replace('{0}', '2'))
     expect(screen.queryByText('stale')).toBeNull()
+    expect(screen.queryByText('undeclared')).toBeNull()
 
     // `hideOutdatedPlugins: false` from the status payload is the documented
     // escape hatch, and it has to reach the browser without a reload.
@@ -685,7 +698,8 @@ describe('MarketSection (jsdom)', () => {
     })
     render(<MarketSection {...props()} />)
     await screen.findByText('stale')
-    expect(screen.queryByText(en.outdatedFilterActive.replace('{0}', '1'))).toBeNull()
+    await screen.findByText('undeclared')
+    expect(screen.queryByText(en.outdatedFilterActive.replace('{0}', '2'))).toBeNull()
   })
 
   it('the install dialog opens with Confirm/Cancel and closes on cancel', async () => {

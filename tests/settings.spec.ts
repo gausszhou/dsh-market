@@ -63,8 +63,8 @@ describe('MarketSettings schema', () => {
 
   it('defaults hideOutdatedPlugins to on', () => {
     // The protective side of the default: an unconfigured market hides an
-    // entry that declared a DSH ceiling this host has already passed. Only a
-    // plugin that said so itself can be hidden by it.
+    // entry that does not declare support reaching this host — a passed DSH
+    // ceiling, or no declaration at all.
     expect(MarketSettings({}).hideOutdatedPlugins).toBe(true)
   })
 

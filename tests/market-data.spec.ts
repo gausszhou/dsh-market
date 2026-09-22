@@ -630,11 +630,13 @@ describe('discover list (visiblePlugins)', () => {
     }).map(plugin => plugin.name)).toEqual(['matches', 'undeclared', 'not-loaded-yet', 'github-only'])
   })
 
-  it('hides entries whose declared DSH ceiling the host has passed', () => {
+  it('hides entries whose declared DSH ceiling the host has passed or that declare no host requirement', () => {
     const rows = [
       plugin({ name: 'current', npm: 'current' }),
       plugin({ name: 'stale', npm: 'stale' }),
       plugin({ name: 'sloppy-but-compatible', npm: 'sloppy' }),
+      plugin({ name: 'undeclared', npm: 'undeclared' }),
+      plugin({ name: 'unreadable', npm: 'unreadable' }),
       plugin({ name: 'no-verdict-yet', npm: 'pending' }),
       plugin({ name: 'github-only', npm: null }),
     ]
@@ -644,7 +646,14 @@ describe('discover list (visiblePlugins)', () => {
       stale: { ...base, status: 'incompatible' as const, outdated: true },
       // `status` forgives the sloppy caret, the outdated filter must not.
       sloppy: { ...base, status: 'compatible' as const, outdated: true },
-      pending: { status: 'unknown' as const, basis: 'undeclared' as const, requirement: null, declarations: [], outdated: false },
+      // A manifest that declares no host requirement is hidden just the same:
+      // the filter's promise is "this list works with your DSH", and silence
+      // cannot make that promise.
+      undeclared: { status: 'unknown' as const, basis: 'undeclared' as const, requirement: null, declarations: [], outdated: false },
+      // An unreadable manifest is not a verdict — the entry stays visible and
+      // is retried, so a transient registry failure never empties the list.
+      unreadable: { status: 'unknown' as const, basis: 'unavailable' as const, requirement: null, declarations: [], outdated: false },
+      // No key at all: the verdict has not landed yet, so nothing is hidden.
     }
 
     // Off leaves the list exactly as the catalog has it.
@@ -654,7 +663,7 @@ describe('discover list (visiblePlugins)', () => {
 
     expect(visiblePlugins(rows, {
       category: 'all', query: '', lang: 'en', sort: 'x', hostCompatibility, hideOutdatedPlugins: true,
-    }).map(plugin => plugin.name)).toEqual(['current', 'no-verdict-yet', 'github-only'])
+    }).map(plugin => plugin.name)).toEqual(['current', 'unreadable', 'no-verdict-yet', 'github-only'])
   })
 
   it('keeps an entry whose verdict predates the field visible', () => {

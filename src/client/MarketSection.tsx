@@ -1519,8 +1519,9 @@ export function MarketSection(props: MarketSectionProps) {
   const [compatibleWithHost, setCompatibleWithHost] = useState(false)
   /**
    * Config `hideOutdatedPlugins` (default ON, so this starts true and the
-   * status poll can only ever turn it off). Entries whose declared DSH
-   * ceiling this host has passed are hidden from Discover and Themes.
+   * status poll can only ever turn it off). Entries that declare no host
+   * requirement, or whose declared DSH ceiling this host has passed, are
+   * hidden from Discover and Themes.
    */
   const [hideOutdatedPlugins, setHideOutdatedPlugins] = useState(true)
   const [hostCompatibility, setHostCompatibility] = useState<HostCompatibilityMap>({})
@@ -2003,13 +2004,14 @@ export function MarketSection(props: MarketSectionProps) {
     })),
     [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, hideOutdatedPlugins, blacklistSet])
   /**
-   * How many entries the outdated filter actually removed from the list the
-   * user is looking at. The same query without the flag, minus what is left:
-   * a count of `outdated` verdicts alone would also count entries other
-   * filters had already removed, and a note that overstates its own effect is
-   * worse than no note.
+   * How many entries the host filter actually removed from the list the
+   * user is looking at — a passed declared ceiling, or no declaration at
+   * all, whichever way the verdict landed. The same query without the flag,
+   * minus what is left: a count of filtered verdicts alone would also count
+   * entries other filters had already removed, and a note that overstates
+   * its own effect is worse than no note.
    */
-  const outdatedHidden = useMemo(() => {
+  const hostHidden = useMemo(() => {
     if (data === null || !hideOutdatedPlugins) return 0
     return visiblePlugins(data.plugins, {
       category: cat, query: q, lang, categories: data.categories,
@@ -2039,11 +2041,11 @@ export function MarketSection(props: MarketSectionProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, pageHostPackagesKey, loadHostCompatibility])
   useEffect(() => {
-    // Both filters read the same verdict map, and the outdated one is on by
+    // Both filters read the same verdict map, and the host one is on by
     // default, so this is normally the whole catalog. The index caches every
-    // manifest it fetches for a day, and undeclared/unreadable entries stay
-    // visible, so an unreachable registry degrades to a longer list rather
-    // than an empty one.
+    // manifest it fetches for a day, and only entries whose manifest could
+    // not be read stay visible, so an unreachable registry degrades to a
+    // longer list rather than an empty one.
     if (compatibleWithHost || hideOutdatedPlugins) void loadHostCompatibility(allHostPackages)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compatibleWithHost, hideOutdatedPlugins, allHostPackagesKey, loadHostCompatibility])
@@ -2064,8 +2066,8 @@ export function MarketSection(props: MarketSectionProps) {
       blacklist: blacklistSet,
     })),
     [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, hostCompatibility, hideOutdatedPlugins, blacklistSet])
-  /** Same accounting as `outdatedHidden`, for the Themes tab's own count. */
-  const themeOutdatedHidden = useMemo(() => {
+  /** Same accounting as `hostHidden`, for the Themes tab's own count. */
+  const themeHostHidden = useMemo(() => {
     if (data === null || !hideOutdatedPlugins) return 0
     return visiblePlugins(data.plugins, {
       category: 'theme', query: qThemes, lang, categories: data.categories,
@@ -4312,21 +4314,21 @@ export function MarketSection(props: MarketSectionProps) {
                             : t('hostFilterActive').replace('{0}', hostVersion)}
                         </div>
                       )}
-                      {/* The outdated filter is on by default, so its note has
+                      {/* The host filter is on by default, so its note has
                           to be the one that says why the list is shorter than
                           the catalog — silence here reads as a bug. It shows
                           only while checking, or when it actually hid
-                          something, so a market with nothing stale stays
-                          quiet. */}
+                          something, so a market with nothing undeclared or
+                          stale stays quiet. */}
                       {hideOutdatedPlugins
-                        && (hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length || outdatedHidden > 0)
+                        && (hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length || hostHidden > 0)
                         && (
                         <div className={css.hostFilterNote}>
                           {hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length
                             ? t('outdatedFilterLoading')
                               .replace('{0}', String(loadedHostPackages))
                               .replace('{1}', String(allHostPackages.length))
-                            : t('outdatedFilterActive').replace('{0}', String(outdatedHidden))}
+                            : t('outdatedFilterActive').replace('{0}', String(hostHidden))}
                         </div>
                       )}
                     </div>
@@ -4335,7 +4337,7 @@ export function MarketSection(props: MarketSectionProps) {
                       ? <div className={css.empty}>
                           <div>{t('empty')}</div>
                           {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
-                          {hideOutdatedPlugins && outdatedHidden > 0 && <div className={css.hostFilterNote}>{t('outdatedFilteredHint')}</div>}
+                          {hideOutdatedPlugins && hostHidden > 0 && <div className={css.hostFilterNote}>{t('outdatedFilteredHint')}</div>}
                         </div>
                       : (
                           <>
@@ -4494,15 +4496,15 @@ export function MarketSection(props: MarketSectionProps) {
                         ? <div className={css.empty}>
                             <div>{t('empty')}</div>
                             {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
-                            {hideOutdatedPlugins && themeOutdatedHidden > 0 && <div className={css.hostFilterNote}>{t('outdatedFilteredHint')}</div>}
+                            {hideOutdatedPlugins && themeHostHidden > 0 && <div className={css.hostFilterNote}>{t('outdatedFilteredHint')}</div>}
                           </div>
                         : (
                             <>
                               <div className={css.themeResultBar}>
                                 <span>{t('themeResultCount').replace('{0}', String(themePlugins.length))}</span>
-                                {hideOutdatedPlugins && themeOutdatedHidden > 0 && (
+                                {hideOutdatedPlugins && themeHostHidden > 0 && (
                                   <span className={css.hostFilterNote}>
-                                    {t('outdatedFilterActive').replace('{0}', String(themeOutdatedHidden))}
+                                    {t('outdatedFilterActive').replace('{0}', String(themeHostHidden))}
                                   </span>
                                 )}
                               </div>

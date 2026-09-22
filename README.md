@@ -40,7 +40,7 @@ its own dsh: it may be older than the one `npm` would give you (#139).
 - **One-click install** — confirm the source, watch live progress; most plugins go live after a page refresh, no restart
 - **Backup & restore** — export your profile's plugin list and configuration as readable JSON, import it on another machine, store it on WebDAV with daily auto-backup, or sync through a private GitHub Gist; restores **merge** (plugins installed after the backup are kept), validate before writing, and roll back on failure
 - **Updates** — per-plugin update checks (npm version or pinned commit vs HEAD), one-click update, or update everything at once. **This fork does not update itself by default** (`enableSelfUpdate` defaults to `false`); set it to `true` in the plugin configuration to restore the market's own update entry
-- **Outdated-DSH filter** — **on by default in this fork**: a catalog entry whose declared DSH support stops below the DSH you are running (`engines.dsh` / DSH peer ranges read from its npm manifest) is hidden from Discover and Themes, so the list does not lead with plugins built for an older release. Undeclared and unverifiable entries stay visible, and the lists say how many were hidden. Turn it off with `hideOutdatedPlugins: false` in the plugin configuration
+- **Outdated-DSH filter** — **on by default in this fork**: a catalog entry whose declared DSH support stops below the DSH you are running (`engines.dsh` / DSH peer ranges read from its npm manifest), or that declares no host requirement at all, is hidden from Discover and Themes, so the list does not lead with plugins built for an older release or silent about their requirements. Only an entry whose manifest could not be read stays visible, and the lists say how many were hidden. Turn it off with `hideOutdatedPlugins: false` in the plugin configuration
 - **Resilient GitHub routes** — in the China download region, Git refs, README content, and avatars each keep their own fallback order. The market remembers the last working route, switches only after transport/HTTP/payload validation fails, and rejects proxy error pages disguised as HTTP 200. If every built-in route fails, **Settings → Plugins → Plugin configuration → GitHub acceleration** accepts one persistent custom HTTPS prefix; `DSHM_GITHUB_PROXY` remains the operator-owned override
 - **Public update API** — plugin-owned settings pages can use the versioned, capability-gated [update API v1](UPDATE-API-V1.md) (beta) instead of copying package-manager logic or depending on private Market UI responses
 - **Uninstall** — two-step confirm; plugins installed this session are removed live
@@ -88,14 +88,15 @@ Installs prefer repo-verified npm packages, then author-supplied prebuilt GitHub
       enableSelfUpdate: true
   ```
 
-  **Plugins that only declare support for an older DSH are hidden by
-  default.** The market reads each catalog entry's public npm manifest
+  **Plugins that do not declare support for your DSH are hidden by default.**
+  The market reads each catalog entry's public npm manifest
   (`engines.dsh` and its `@deepseek-ai/dsh*` peer ranges) and drops the ones
   whose declared ceiling the running DSH has already passed — a plugin pinned
-  to `0.1.2-rc.1` while you run `0.1.5-rc.2`, for instance. An entry that
-  declares no host requirement, or whose requirement cannot be read, stays
-  visible: only a plugin that said so itself can be hidden. The Discover and
-  Themes lists say how many were hidden and where to turn it off:
+  to `0.1.2-rc.1` while you run `0.1.5-rc.2`, for instance — as well as any
+  entry that declares no host requirement at all. Only an entry whose
+  requirement cannot be read (a transient registry failure) stays visible.
+  The Discover and Themes lists say how many were hidden and where to turn it
+  off:
 
   ```yaml
   - id: dsh-market

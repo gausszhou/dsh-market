@@ -101,6 +101,18 @@ export interface HostCompatibility {
 /** npm package name -> discovery-time host verdict. */
 export type HostCompatibilityMap = Record<string, HostCompatibility>
 
+/**
+ * Whether the host filter (config `hideOutdatedPlugins`) removes a verdict:
+ * the package declared a DSH ceiling this host has passed, or declared no
+ * host requirement at all — either way it is not a plugin this DSH was told
+ * it supports. A verdict that could not be read (`unavailable`) is never
+ * hidden: a transient registry failure must not empty the lists, and the
+ * browser retries that lookup on the next page or filter change.
+ */
+export function hostFilterHides(compatibility: HostCompatibility | undefined): boolean {
+  return compatibility?.outdated === true || compatibility?.basis === 'undeclared'
+}
+
 /** Profile dependency map: package name → install spec. */
 export type InstalledMap = Record<string, string>
 
@@ -364,9 +376,11 @@ export interface ListQuery {
   /** Hide only entries that are known to be incompatible; unknown stays visible. */
   compatibleWithHost?: boolean
   /**
-   * Hide entries whose declared DSH support stops below the running host
-   * (config `hideOutdatedPlugins`, default on). Entries with no verdict yet,
-   * or none to be had, stay visible — the filter never guesses.
+   * Hide entries that do not declare support for the running DSH (config
+   * `hideOutdatedPlugins`, default on): a declared ceiling this host has
+   * passed, or no host requirement declared at all. Entries with no verdict
+   * yet, or whose manifest could not be read, stay visible — the filter
+   * never guesses.
    */
   hideOutdatedPlugins?: boolean
   /**
@@ -552,12 +566,13 @@ export function visiblePlugins(plugins: RegistryPlugin[], options: ListQuery): R
     if (options.sinceDays !== undefined && !withinDays(plugin.added, options.sinceDays)) return []
     if (options.compatibleWithHost === true && plugin.npm != null
       && options.hostCompatibility?.[plugin.npm]?.status === 'incompatible') return []
-    // The outdated filter is deliberately its own switch, not folded into the
+    // The host filter is deliberately its own switch, not folded into the
     // one above: `status` forgives an implicit `^`/`~` ceiling (see
-    // declarationResult), and "only claims support for an older DSH" is
+    // declarationResult), and "does not declare support that reaches this
+    // host" — a passed ceiling, or no declared requirement at all — is
     // precisely the verdict this filter exists to act on.
     if (options.hideOutdatedPlugins === true && plugin.npm != null
-      && options.hostCompatibility?.[plugin.npm]?.outdated === true) return []
+      && hostFilterHides(options.hostCompatibility?.[plugin.npm])) return []
     const relevance = query === '' ? 0 : pluginRelevance(plugin, query, tokens, options.lang, options.categories)
     return relevance === 0 && query !== '' ? [] : [{ plugin, relevance, index }]
   })

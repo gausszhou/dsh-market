@@ -98,7 +98,7 @@ export interface MarketSettings {
   blacklist: string[]
   /** Whether the market may update ITSELF; default off — needs an explicit true. */
   enableSelfUpdate: boolean
-  /** Hide catalog entries whose declared DSH support stops below this host. */
+  /** Hide catalog entries that do not declare support for the running DSH: a passed ceiling or no declaration at all. */
   hideOutdatedPlugins: boolean
 }
 
@@ -144,9 +144,10 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
     blacklist: resolved.blacklist ?? [],
     enableSelfUpdate: resolved.enableSelfUpdate ?? false,
     // Unset means ON here, unlike enableSelfUpdate: the filter only hides a
-    // plugin that declared a DSH ceiling this host has passed, so the default
-    // is the protective side. `?? true` rather than `=== true` for exactly
-    // that reason — an unconfigured market filters, and the switch says so.
+    // plugin that does not declare support reaching this host — a passed
+    // ceiling or no declaration at all — so the default is the protective
+    // side. `?? true` rather than `=== true` for exactly that reason — an
+    // unconfigured market filters, and the switch says so.
     hideOutdatedPlugins: resolved.hideOutdatedPlugins ?? true,
   }
   let source = (): MarketSettings => entry

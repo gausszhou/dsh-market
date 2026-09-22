@@ -269,9 +269,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			hostUnknown: "宿主版本未知",
 			hostFilterLoading: "正在检查宿主要求 {0}/{1}；未声明或无法确认的插件仍会显示",
 			hostFilterActive: "正在筛选适配 DSH {0} 的插件；未声明或无法确认的插件仍会显示",
-			outdatedFilterLoading: "正在核对插件声明的 DSH 版本 {0}/{1}；未声明或无法确认的插件仍会显示",
-			outdatedFilterActive: "已按配置隐藏 {0} 个只声明支持旧版 DSH 的插件；可在本插件配置里关掉这个过滤",
-			outdatedFilteredHint: "有些插件只声明支持旧版 DSH，已被过滤；可在本插件配置里调整。",
+			outdatedFilterLoading: "正在核对插件声明的 DSH 版本 {0}/{1}；未声明宿主要求的插件将被过滤",
+			outdatedFilterActive: "已按配置隐藏 {0} 个未声明或只支持旧版 DSH 的插件；可在本插件配置里关掉这个过滤",
+			outdatedFilteredHint: "有些插件未声明宿主要求、或只声明支持旧版 DSH，已被过滤；可在本插件配置里调整。",
 			hostRequirement: "DSH {0}",
 			hostRequirementLoading: "正在读取宿主要求…",
 			hostRequirementUndeclared: "未声明宿主要求",
@@ -808,9 +808,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			hostUnknown: "Host version unknown",
 			hostFilterLoading: "Checking host requirements {0}/{1}; undeclared or unavailable plugins remain visible",
 			hostFilterActive: "Filtering for DSH {0}; undeclared or unavailable plugins remain visible",
-			outdatedFilterLoading: "Checking declared DSH versions {0}/{1}; undeclared or unavailable plugins remain visible",
-			outdatedFilterActive: "Hid {0} plugins that only declare support for an older DSH; turn this filter off in the plugin configuration",
-			outdatedFilteredHint: "Some plugins only declare support for an older DSH and were filtered out; adjust this in the plugin configuration.",
+			outdatedFilterLoading: "Checking declared DSH versions {0}/{1}; plugins with no declared host requirement will be filtered once checked",
+			outdatedFilterActive: "Hid {0} plugins that declare no host requirement or only support an older DSH; turn this filter off in the plugin configuration",
+			outdatedFilteredHint: "Some plugins declare no host requirement or only support an older DSH and were filtered out; adjust this in the plugin configuration.",
 			hostRequirement: "DSH {0}",
 			hostRequirementLoading: "Reading host requirement…",
 			hostRequirementUndeclared: "Host requirement undeclared",
@@ -1314,6 +1314,17 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			return categories;
 		}
 		/**
+		* Whether the host filter (config `hideOutdatedPlugins`) removes a verdict:
+		* the package declared a DSH ceiling this host has passed, or declared no
+		* host requirement at all — either way it is not a plugin this DSH was told
+		* it supports. A verdict that could not be read (`unavailable`) is never
+		* hidden: a transient registry failure must not empty the lists, and the
+		* browser retries that lookup on the next page or filter change.
+		*/
+		function hostFilterHides(compatibility) {
+			return compatibility?.outdated === true || compatibility?.basis === "undeclared";
+		}
+		/**
 		* Add active profile Bundles as presence-only catalog entries.
 		*
 		* The returned map is for catalog matching only. Update and uninstall flows
@@ -1497,7 +1508,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				if (options.category !== "all" && !categories.includes(options.category)) return [];
 				if (options.sinceDays !== void 0 && !withinDays(plugin.added, options.sinceDays)) return [];
 				if (options.compatibleWithHost === true && plugin.npm != null && options.hostCompatibility?.[plugin.npm]?.status === "incompatible") return [];
-				if (options.hideOutdatedPlugins === true && plugin.npm != null && options.hostCompatibility?.[plugin.npm]?.outdated === true) return [];
+				if (options.hideOutdatedPlugins === true && plugin.npm != null && hostFilterHides(options.hostCompatibility?.[plugin.npm])) return [];
 				const relevance = query === "" ? 0 : pluginRelevance(plugin, query, tokens, options.lang, options.categories);
 				return relevance === 0 && query !== "" ? [] : [{
 					plugin,
@@ -6514,8 +6525,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			const [compatibleWithHost, setCompatibleWithHost] = (0, react.useState)(false);
 			/**
 			* Config `hideOutdatedPlugins` (default ON, so this starts true and the
-			* status poll can only ever turn it off). Entries whose declared DSH
-			* ceiling this host has passed are hidden from Discover and Themes.
+			* status poll can only ever turn it off). Entries that declare no host
+			* requirement, or whose declared DSH ceiling this host has passed, are
+			* hidden from Discover and Themes.
 			*/
 			const [hideOutdatedPlugins, setHideOutdatedPlugins] = (0, react.useState)(true);
 			const [hostCompatibility, setHostCompatibility] = (0, react.useState)({});
@@ -6934,13 +6946,14 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				blacklistSet
 			]);
 			/**
-			* How many entries the outdated filter actually removed from the list the
-			* user is looking at. The same query without the flag, minus what is left:
-			* a count of `outdated` verdicts alone would also count entries other
-			* filters had already removed, and a note that overstates its own effect is
-			* worse than no note.
+			* How many entries the host filter actually removed from the list the
+			* user is looking at — a passed declared ceiling, or no declaration at
+			* all, whichever way the verdict landed. The same query without the flag,
+			* minus what is left: a count of filtered verdicts alone would also count
+			* entries other filters had already removed, and a note that overstates
+			* its own effect is worse than no note.
 			*/
-			const outdatedHidden = (0, react.useMemo)(() => {
+			const hostHidden = (0, react.useMemo)(() => {
 				if (data === null || !hideOutdatedPlugins) return 0;
 				return visiblePlugins(data.plugins, {
 					category: cat,
@@ -7018,8 +7031,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				hideOutdatedPlugins,
 				blacklistSet
 			]);
-			/** Same accounting as `outdatedHidden`, for the Themes tab's own count. */
-			const themeOutdatedHidden = (0, react.useMemo)(() => {
+			/** Same accounting as `hostHidden`, for the Themes tab's own count. */
+			const themeHostHidden = (0, react.useMemo)(() => {
 				if (data === null || !hideOutdatedPlugins) return 0;
 				return visiblePlugins(data.plugins, {
 					category: "theme",
@@ -9492,9 +9505,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 											className: Market_module_css_default.hostFilterNote,
 											children: hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length ? t("hostFilterLoading").replace("{0}", String(loadedHostPackages)).replace("{1}", String(allHostPackages.length)) : t("hostFilterActive").replace("{0}", hostVersion)
 										}),
-										hideOutdatedPlugins && (hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length || outdatedHidden > 0) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										hideOutdatedPlugins && (hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length || hostHidden > 0) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 											className: Market_module_css_default.hostFilterNote,
-											children: hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length ? t("outdatedFilterLoading").replace("{0}", String(loadedHostPackages)).replace("{1}", String(allHostPackages.length)) : t("outdatedFilterActive").replace("{0}", String(outdatedHidden))
+											children: hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length ? t("outdatedFilterLoading").replace("{0}", String(loadedHostPackages)).replace("{1}", String(allHostPackages.length)) : t("outdatedFilterActive").replace("{0}", String(hostHidden))
 										})
 									]
 								})]
@@ -9507,7 +9520,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 										className: Market_module_css_default.hostFilterNote,
 										children: t("blacklistFilteredHint")
 									}),
-									hideOutdatedPlugins && outdatedHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									hideOutdatedPlugins && hostHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: Market_module_css_default.hostFilterNote,
 										children: t("outdatedFilteredHint")
 									})
@@ -9682,7 +9695,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 										className: Market_module_css_default.hostFilterNote,
 										children: t("blacklistFilteredHint")
 									}),
-									hideOutdatedPlugins && themeOutdatedHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									hideOutdatedPlugins && themeHostHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: Market_module_css_default.hostFilterNote,
 										children: t("outdatedFilteredHint")
 									})
@@ -9690,9 +9703,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: Market_module_css_default.themeResultBar,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("themeResultCount").replace("{0}", String(themePlugins$1.length)) }), hideOutdatedPlugins && themeOutdatedHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("themeResultCount").replace("{0}", String(themePlugins$1.length)) }), hideOutdatedPlugins && themeHostHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: Market_module_css_default.hostFilterNote,
-										children: t("outdatedFilterActive").replace("{0}", String(themeOutdatedHidden))
+										children: t("outdatedFilterActive").replace("{0}", String(themeHostHidden))
 									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {

@@ -134,13 +134,13 @@ export interface MarketConfig {
    */
   enableSelfUpdate?: boolean
   /**
-   * Hide catalog entries whose DECLARED DSH support stops below the running
-   * host — a plugin whose `engines.dsh` or DSH-peer ceiling this version has
-   * passed, i.e. one built for an older DSH. Default TRUE. An entry that
-   * declared no host requirement, or whose requirement could not be read,
-   * stays visible: the filter only hides a plugin for something it said
-   * itself. Configurable through the profile patch and this plugin's
-   * settings page.
+   * Hide catalog entries that do not declare support for the running DSH:
+   * a plugin whose `engines.dsh` or DSH-peer ceiling this version has passed
+   * (built for an older DSH), or one whose manifest declares no host
+   * requirement at all. Default TRUE. An entry whose manifest could not be
+   * read stays visible — the filter never guesses, and a registry outage
+   * must not empty the lists. Configurable through the profile patch and
+   * this plugin's settings page.
    */
   hideOutdatedPlugins?: boolean
 }

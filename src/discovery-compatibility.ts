@@ -41,8 +41,9 @@ export interface HostCompatibility {
    * usually works and is not worth blocking an install over; but it is still
    * a ceiling the host has passed, and hiding exactly those is the point of
    * the outdated discovery filter. A declaration with no ceiling at all
-   * (`>=x`, `*`, unparseable) can never make this true, so an entry is only
-   * hidden for something it said itself.
+   * (`>=x`, `*`, unparseable) can never make this true, so only a written
+   * ceiling can. The host filter hides entries that declared NO requirement
+   * separately, through their `undeclared` basis, not this flag.
    */
   outdated: boolean
 }
