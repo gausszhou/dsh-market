@@ -133,6 +133,16 @@ export interface MarketConfig {
    * setting — a decision about the market is about the market only.
    */
   enableSelfUpdate?: boolean
+  /**
+   * Hide catalog entries whose DECLARED DSH support stops below the running
+   * host — a plugin whose `engines.dsh` or DSH-peer ceiling this version has
+   * passed, i.e. one built for an older DSH. Default TRUE. An entry that
+   * declared no host requirement, or whose requirement could not be read,
+   * stays visible: the filter only hides a plugin for something it said
+   * itself. Configurable through the profile patch and this plugin's
+   * settings page.
+   */
+  hideOutdatedPlugins?: boolean
 }
 
 /** Cap on blacklist tokens a status payload will carry. */
@@ -2603,6 +2613,11 @@ export function mountMarketRoutes(
           // Named so the card can say WHY it is not offering an update — a
           // missing button is otherwise read as "up to date".
           enableSelfUpdate: config.enableSelfUpdate === true,
+          // Whether the browser hides entries whose declared DSH ceiling this
+          // host has passed. Reported with the same "config report" payload
+          // as blacklist, so a settings edit lands without a page reload.
+          // Default ON, hence `!== false` rather than `=== true`.
+          hideOutdatedPlugins: config.hideOutdatedPlugins !== false,
           // Named so the UI can say WHY the button is gone. A blank
           // "no restart button" is the state #229 reported as broken.
           supervisor: detectedSupervisor(),

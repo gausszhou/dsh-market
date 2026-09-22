@@ -12,7 +12,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { satisfiesRange } from './check.ts'
-import { classifyPeer } from './compatibility.ts'
+import { classifyPeer, isAboveRangeCeiling } from './compatibility.ts'
 import { marketFetch } from './net.ts'
 
 export type HostCompatibilityStatus = 'compatible' | 'incompatible' | 'unknown'
@@ -31,6 +31,20 @@ export interface HostCompatibility {
   /** Human-readable intersection of every raw declaration. */
   requirement: string | null
   declarations: HostRequirementDeclaration[]
+  /**
+   * The running DSH is above the ceiling of at least one declaration, so the
+   * plugin's declared support stops BEFORE this host — a plugin built for an
+   * older DSH.
+   *
+   * Deliberately independent of `status`. `declarationResult` forgives an
+   * implicit `^`/`~` ceiling, because `^0.0.1` is a sloppy declaration that
+   * usually works and is not worth blocking an install over; but it is still
+   * a ceiling the host has passed, and hiding exactly those is the point of
+   * the outdated discovery filter. A declaration with no ceiling at all
+   * (`>=x`, `*`, unparseable) can never make this true, so an entry is only
+   * hidden for something it said itself.
+   */
+  outdated: boolean
 }
 
 export interface NpmManifestFacts {
@@ -145,6 +159,22 @@ function declarationResult(
 }
 
 /**
+ * Whether the running host has passed the support these declarations claim.
+ *
+ * Declarations are conjunctive — every one of them has to hold — so a single
+ * ceiling the host has climbed past is already a declaration the host does
+ * not satisfy. `declarations.some`, not `.every`, for the same reason
+ * `deriveHostCompatibility` reads a definite mismatch out of `some(false)`.
+ */
+function outdatedFor(
+  declarations: HostRequirementDeclaration[],
+  hostVersion: string | null,
+): boolean {
+  if (hostVersion === null) return false
+  return declarations.some(item => isAboveRangeCeiling(hostVersion, item.range))
+}
+
+/**
  * Derive the current host verdict from raw manifest facts.
  *
  * Every valid declaration is conjunctive: an explicit `engines.dsh` and all
@@ -157,7 +187,7 @@ export function deriveHostCompatibility(
   hostPackages: ReadonlySet<string>,
 ): HostCompatibility {
   if (facts === null) {
-    return { status: 'unknown', basis: 'unavailable', requirement: null, declarations: [] }
+    return { status: 'unknown', basis: 'unavailable', requirement: null, declarations: [], outdated: false }
   }
   const declarations: HostRequirementDeclaration[] = []
   if (facts.enginesDsh !== null) {
@@ -173,10 +203,10 @@ export function deriveHostCompatibility(
   }
   const requirement = displayRequirement(declarations)
   if (declarations.length === 0) {
-    return { status: 'unknown', basis: 'undeclared', requirement: null, declarations: [] }
+    return { status: 'unknown', basis: 'undeclared', requirement: null, declarations: [], outdated: false }
   }
   if (hostVersion === null) {
-    return { status: 'unknown', basis: 'manifest', requirement, declarations }
+    return { status: 'unknown', basis: 'manifest', requirement, declarations, outdated: false }
   }
   const outcomes = declarations.map(item => declarationResult(item, hostVersion))
   const status: HostCompatibilityStatus = outcomes.some(item => item === false)
@@ -184,7 +214,7 @@ export function deriveHostCompatibility(
     : outcomes.every(item => item === true)
       ? 'compatible'
       : 'unknown'
-  return { status, basis: 'manifest', requirement, declarations }
+  return { status, basis: 'manifest', requirement, declarations, outdated: outdatedFor(declarations, hostVersion) }
 }
 
 /**

@@ -269,6 +269,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			hostUnknown: "宿主版本未知",
 			hostFilterLoading: "正在检查宿主要求 {0}/{1}；未声明或无法确认的插件仍会显示",
 			hostFilterActive: "正在筛选适配 DSH {0} 的插件；未声明或无法确认的插件仍会显示",
+			outdatedFilterLoading: "正在核对插件声明的 DSH 版本 {0}/{1}；未声明或无法确认的插件仍会显示",
+			outdatedFilterActive: "已按配置隐藏 {0} 个只声明支持旧版 DSH 的插件；可在本插件配置里关掉这个过滤",
+			outdatedFilteredHint: "有些插件只声明支持旧版 DSH，已被过滤；可在本插件配置里调整。",
 			hostRequirement: "DSH {0}",
 			hostRequirementLoading: "正在读取宿主要求…",
 			hostRequirementUndeclared: "未声明宿主要求",
@@ -805,6 +808,9 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			hostUnknown: "Host version unknown",
 			hostFilterLoading: "Checking host requirements {0}/{1}; undeclared or unavailable plugins remain visible",
 			hostFilterActive: "Filtering for DSH {0}; undeclared or unavailable plugins remain visible",
+			outdatedFilterLoading: "Checking declared DSH versions {0}/{1}; undeclared or unavailable plugins remain visible",
+			outdatedFilterActive: "Hid {0} plugins that only declare support for an older DSH; turn this filter off in the plugin configuration",
+			outdatedFilteredHint: "Some plugins only declare support for an older DSH and were filtered out; adjust this in the plugin configuration.",
 			hostRequirement: "DSH {0}",
 			hostRequirementLoading: "Reading host requirement…",
 			hostRequirementUndeclared: "Host requirement undeclared",
@@ -1491,6 +1497,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				if (options.category !== "all" && !categories.includes(options.category)) return [];
 				if (options.sinceDays !== void 0 && !withinDays(plugin.added, options.sinceDays)) return [];
 				if (options.compatibleWithHost === true && plugin.npm != null && options.hostCompatibility?.[plugin.npm]?.status === "incompatible") return [];
+				if (options.hideOutdatedPlugins === true && plugin.npm != null && options.hostCompatibility?.[plugin.npm]?.outdated === true) return [];
 				const relevance = query === "" ? 0 : pluginRelevance(plugin, query, tokens, options.lang, options.categories);
 				return relevance === 0 && query !== "" ? [] : [{
 					plugin,
@@ -5079,7 +5086,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			status: "unknown",
 			basis: "unavailable",
 			requirement: null,
-			declarations: []
+			declarations: [],
+			outdated: false
 		};
 		/**
 		* Read the update reminders dismissed for this host process. The boot id is
@@ -6504,6 +6512,12 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 			const [hostVersion, setHostVersion] = (0, react.useState)(void 0);
 			/** v1 is deliberately opt-in: undeclared/unknown entries stay visible even when enabled. */
 			const [compatibleWithHost, setCompatibleWithHost] = (0, react.useState)(false);
+			/**
+			* Config `hideOutdatedPlugins` (default ON, so this starts true and the
+			* status poll can only ever turn it off). Entries whose declared DSH
+			* ceiling this host has passed are hidden from Discover and Themes.
+			*/
+			const [hideOutdatedPlugins, setHideOutdatedPlugins] = (0, react.useState)(true);
 			const [hostCompatibility, setHostCompatibility] = (0, react.useState)({});
 			const [hostCompatibilityPending, setHostCompatibilityPending] = (0, react.useState)(0);
 			/** Names already resolved or in flight; failed/unavailable names are released for an explicit retry. */
@@ -6640,7 +6654,10 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 								accepted[name] = UNAVAILABLE_HOST_COMPATIBILITY;
 								continue;
 							}
-							accepted[name] = item;
+							accepted[name] = {
+								...item,
+								outdated: item.outdated === true
+							};
 							if (item.basis === "unavailable") requestedHostCompatibility.current.delete(name);
 						}
 						setHostCompatibility((current) => ({
@@ -6674,6 +6691,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 					setSupervisor(typeof status.supervisor === "string" ? status.supervisor : null);
 					setDebuggerLatch(typeof status.debugger === "string" ? status.debugger : null);
 					if (Array.isArray(status.blacklist)) setBlacklist(status.blacklist);
+					if (typeof status.hideOutdatedPlugins === "boolean") setHideOutdatedPlugins(status.hideOutdatedPlugins);
 					if (typeof status.version === "string" && status.version !== "") setVersion(status.version);
 				}).catch(() => {});
 				refreshInstalled();
@@ -6879,6 +6897,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				sortDir,
 				timeRange,
 				compatibleWithHost,
+				hideOutdatedPlugins,
 				qThemes,
 				themeSortField,
 				themeSortDir,
@@ -6899,6 +6918,7 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				sinceDays: timeRange === "all" ? void 0 : TIME_RANGE_DAYS[timeRange],
 				hostCompatibility,
 				compatibleWithHost,
+				hideOutdatedPlugins,
 				blacklist: blacklistSet
 			}), [
 				data,
@@ -6910,7 +6930,42 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				timeRange,
 				hostCompatibility,
 				compatibleWithHost,
+				hideOutdatedPlugins,
 				blacklistSet
+			]);
+			/**
+			* How many entries the outdated filter actually removed from the list the
+			* user is looking at. The same query without the flag, minus what is left:
+			* a count of `outdated` verdicts alone would also count entries other
+			* filters had already removed, and a note that overstates its own effect is
+			* worse than no note.
+			*/
+			const outdatedHidden = (0, react.useMemo)(() => {
+				if (data === null || !hideOutdatedPlugins) return 0;
+				return visiblePlugins(data.plugins, {
+					category: cat,
+					query: q,
+					lang,
+					categories: data.categories,
+					sort: `${sortField}-${sortDir}`,
+					sinceDays: timeRange === "all" ? void 0 : TIME_RANGE_DAYS[timeRange],
+					hostCompatibility,
+					compatibleWithHost,
+					blacklist: blacklistSet
+				}).length - plugins.length;
+			}, [
+				data,
+				q,
+				cat,
+				lang,
+				sortField,
+				sortDir,
+				timeRange,
+				hostCompatibility,
+				compatibleWithHost,
+				hideOutdatedPlugins,
+				blacklistSet,
+				plugins
 			]);
 			const { currentPage, totalPages, pageSize, goToPage, changePageSize } = usePagination(plugins.length, [
 				q,
@@ -6918,7 +6973,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				sortField,
 				sortDir,
 				timeRange,
-				compatibleWithHost
+				compatibleWithHost,
+				hideOutdatedPlugins
 			], scrollToTop);
 			const pagePlugins = plugins.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 			const pageHostPackages = [...new Set(pagePlugins.flatMap((plugin) => typeof plugin.npm === "string" && plugin.npm !== "" ? [plugin.npm] : []))];
@@ -6933,9 +6989,10 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				loadHostCompatibility
 			]);
 			(0, react.useEffect)(() => {
-				if (compatibleWithHost) loadHostCompatibility(allHostPackages);
+				if (compatibleWithHost || hideOutdatedPlugins) loadHostCompatibility(allHostPackages);
 			}, [
 				compatibleWithHost,
+				hideOutdatedPlugins,
 				allHostPackagesKey,
 				loadHostCompatibility
 			]);
@@ -6947,6 +7004,8 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				categories: data.categories,
 				sort: `${themeSortField}-${themeSortDir}`,
 				sinceDays: themeTimeRange === "all" ? void 0 : TIME_RANGE_DAYS[themeTimeRange],
+				hostCompatibility,
+				hideOutdatedPlugins,
 				blacklist: blacklistSet
 			}), [
 				data,
@@ -6955,13 +7014,41 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 				themeSortField,
 				themeSortDir,
 				themeTimeRange,
+				hostCompatibility,
+				hideOutdatedPlugins,
 				blacklistSet
+			]);
+			/** Same accounting as `outdatedHidden`, for the Themes tab's own count. */
+			const themeOutdatedHidden = (0, react.useMemo)(() => {
+				if (data === null || !hideOutdatedPlugins) return 0;
+				return visiblePlugins(data.plugins, {
+					category: "theme",
+					query: qThemes,
+					lang,
+					categories: data.categories,
+					sort: `${themeSortField}-${themeSortDir}`,
+					sinceDays: themeTimeRange === "all" ? void 0 : TIME_RANGE_DAYS[themeTimeRange],
+					hostCompatibility,
+					blacklist: blacklistSet
+				}).length - themePlugins$1.length;
+			}, [
+				data,
+				qThemes,
+				lang,
+				themeSortField,
+				themeSortDir,
+				themeTimeRange,
+				hostCompatibility,
+				hideOutdatedPlugins,
+				blacklistSet,
+				themePlugins$1
 			]);
 			const themePagination = usePagination(themePlugins$1.length, [
 				qThemes,
 				themeSortField,
 				themeSortDir,
-				themeTimeRange
+				themeTimeRange,
+				hideOutdatedPlugins
 			], scrollToTop);
 			const themePagePlugins = themePlugins$1.slice((themePagination.currentPage - 1) * themePagination.pageSize, themePagination.currentPage * themePagination.pageSize);
 			const favoriteListed = (0, react.useMemo)(() => data === null ? [] : pluginsForFavorites(data.plugins, favoriteUrlSet, {
@@ -9351,66 +9438,80 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 									})
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: Market_module_css_default.cats,
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: Market_module_css_default.catsRow,
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											ref: catsWrapRef,
-											className: visibleCats === null ? `${Market_module_css_default.catsWrap} ${Market_module_css_default.catsCollapsed}` : Market_module_css_default.catsWrap,
-											children: (() => {
-												const budget = catsStuck ? visibleCatsOneRow : visibleCats;
-												const ordered = orderedCategories(categories, cat, catsExpanded, budget);
-												const shown = catsExpanded || budget === null ? ordered : ordered.slice(0, Math.max(0, budget - 1));
-												return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Pill, {
-														"data-chip": "1",
-														active: cat === "all",
-														onClick: () => setCat("all"),
-														children: t("all") + " (" + formatCount(data.count) + ")"
-													}),
-													shown.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Pill, {
-														"data-chip": "1",
-														active: cat === id,
-														onClick: () => setCat(id),
-														children: data.categories[id] && (data.categories[id][lang] || data.categories[id].en) || id
-													}, id)),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
-														variant: "ghost",
-														size: "sm",
-														className: Market_module_css_default.catsToggle,
-														icon: catsExpanded ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, { size: 14 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, { size: 14 }),
-														"aria-label": catsExpanded ? t("catsLess") : t("catsMore"),
-														onClick: () => {
-															const next = !catsExpanded;
-															if (catsStuck) setStuckExpanded(next);
-															setCatsOpen(next);
-														}
-													})
-												] });
-											})()
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilterMenu, {
-											sortField,
-											sortDir,
-											timeRange,
-											hostVersion,
-											compatibleWithHost,
-											onSortField: setSortField,
-											onSortDir: setSortDir,
-											onTimeRange: setTimeRange,
-											onCompatibleWithHost: setCompatibleWithHost,
-											t
-										})]
-									}), compatibleWithHost && typeof hostVersion === "string" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-										className: Market_module_css_default.hostFilterNote,
-										children: hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length ? t("hostFilterLoading").replace("{0}", String(loadedHostPackages)).replace("{1}", String(allHostPackages.length)) : t("hostFilterActive").replace("{0}", hostVersion)
-									})]
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: Market_module_css_default.catsRow,
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												ref: catsWrapRef,
+												className: visibleCats === null ? `${Market_module_css_default.catsWrap} ${Market_module_css_default.catsCollapsed}` : Market_module_css_default.catsWrap,
+												children: (() => {
+													const budget = catsStuck ? visibleCatsOneRow : visibleCats;
+													const ordered = orderedCategories(categories, cat, catsExpanded, budget);
+													const shown = catsExpanded || budget === null ? ordered : ordered.slice(0, Math.max(0, budget - 1));
+													return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Pill, {
+															"data-chip": "1",
+															active: cat === "all",
+															onClick: () => setCat("all"),
+															children: t("all") + " (" + formatCount(data.count) + ")"
+														}),
+														shown.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Pill, {
+															"data-chip": "1",
+															active: cat === id,
+															onClick: () => setCat(id),
+															children: data.categories[id] && (data.categories[id][lang] || data.categories[id].en) || id
+														}, id)),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
+															variant: "ghost",
+															size: "sm",
+															className: Market_module_css_default.catsToggle,
+															icon: catsExpanded ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronUpOutline14, { size: 14 }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.IconChevronDownOutline14, { size: 14 }),
+															"aria-label": catsExpanded ? t("catsLess") : t("catsMore"),
+															onClick: () => {
+																const next = !catsExpanded;
+																if (catsStuck) setStuckExpanded(next);
+																setCatsOpen(next);
+															}
+														})
+													] });
+												})()
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FilterMenu, {
+												sortField,
+												sortDir,
+												timeRange,
+												hostVersion,
+												compatibleWithHost,
+												onSortField: setSortField,
+												onSortDir: setSortDir,
+												onTimeRange: setTimeRange,
+												onCompatibleWithHost: setCompatibleWithHost,
+												t
+											})]
+										}),
+										compatibleWithHost && typeof hostVersion === "string" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: Market_module_css_default.hostFilterNote,
+											children: hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length ? t("hostFilterLoading").replace("{0}", String(loadedHostPackages)).replace("{1}", String(allHostPackages.length)) : t("hostFilterActive").replace("{0}", hostVersion)
+										}),
+										hideOutdatedPlugins && (hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length || outdatedHidden > 0) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: Market_module_css_default.hostFilterNote,
+											children: hostCompatibilityPending > 0 || loadedHostPackages < allHostPackages.length ? t("outdatedFilterLoading").replace("{0}", String(loadedHostPackages)).replace("{1}", String(allHostPackages.length)) : t("outdatedFilterActive").replace("{0}", String(outdatedHidden))
+										})
+									]
 								})]
 							}),
 							plugins.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: Market_module_css_default.empty,
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: t("empty") }), blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: Market_module_css_default.hostFilterNote,
-									children: t("blacklistFilteredHint")
-								})]
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: t("empty") }),
+									blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("blacklistFilteredHint")
+									}),
+									hideOutdatedPlugins && outdatedHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("outdatedFilteredHint")
+									})
+								]
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(Masonry, {
 								items: pagePlugins,
 								render: pluginCard
@@ -9575,14 +9676,24 @@ window.__ModuleLoader__.load({ id: "@gausszhou/dsh-market", factory: (require) =
 								children: t("themeEmpty")
 							}) : themePlugins$1.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: Market_module_css_default.empty,
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: t("empty") }), blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-									className: Market_module_css_default.hostFilterNote,
-									children: t("blacklistFilteredHint")
-								})]
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { children: t("empty") }),
+									blacklistSet.size > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("blacklistFilteredHint")
+									}),
+									hideOutdatedPlugins && themeOutdatedHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("outdatedFilteredHint")
+									})
+								]
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: Market_module_css_default.themeResultBar,
-									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("themeResultCount").replace("{0}", String(themePlugins$1.length)) })
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("themeResultCount").replace("{0}", String(themePlugins$1.length)) }), hideOutdatedPlugins && themeOutdatedHidden > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: Market_module_css_default.hostFilterNote,
+										children: t("outdatedFilterActive").replace("{0}", String(themeOutdatedHidden))
+									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									className: Market_module_css_default.themeGallery,

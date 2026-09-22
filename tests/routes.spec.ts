@@ -898,3 +898,24 @@ describe('enableSelfUpdate config', () => {
     }
   })
 })
+
+describe('hideOutdatedPlugins config', () => {
+  it('reports the outdated filter ON when nothing is configured', async () => {
+    // Default-on is the whole point: an unconfigured market filters, so the
+    // status payload has to say so or the browser cannot agree with it.
+    const res = await hit(routes, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).hideOutdatedPlugins).toBe(true)
+  })
+
+  it('reports the outdated filter OFF only on an explicit false', async () => {
+    const off = mount(undefined, { hideOutdatedPlugins: false }).routes
+    const res = await hit(off, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).hideOutdatedPlugins).toBe(false)
+
+    const on = mount(undefined, { hideOutdatedPlugins: true }).routes
+    const explicit = await hit(on, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(jsonBody(explicit).hideOutdatedPlugins).toBe(true)
+  })
+})

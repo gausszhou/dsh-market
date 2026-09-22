@@ -89,6 +89,13 @@ export interface HostCompatibility {
   basis: 'manifest' | 'undeclared' | 'unavailable'
   requirement: string | null
   declarations: Array<{ kind: 'engine' | 'peer'; package?: string; range: string }>
+  /**
+   * The running DSH has passed at least one ceiling the package declared, so
+   * the entry only claims support for an older DSH. A host too old to send
+   * the field reads as false, which keeps such an entry visible rather than
+   * hiding it on a verdict nobody made.
+   */
+  outdated?: boolean
 }
 
 /** npm package name -> discovery-time host verdict. */
@@ -161,6 +168,12 @@ export interface MarketStatus {
   enableSelfUpdate?: boolean
   /** Blacklist tokens from the market config; matching entries are hidden from the lists. */
   blacklist?: string[]
+  /**
+   * Whether entries whose declared DSH ceiling this host has passed are
+   * hidden (config hideOutdatedPlugins; default true). Absent on a host that
+   * predates the setting, which reads as the default.
+   */
+  hideOutdatedPlugins?: boolean
   /** Legacy single prefix for browser bundles predating githubRoutes. */
   githubProxy?: string | null
   /** Ordered per-service routes; null means the canonical GitHub URL. */
@@ -351,6 +364,12 @@ export interface ListQuery {
   /** Hide only entries that are known to be incompatible; unknown stays visible. */
   compatibleWithHost?: boolean
   /**
+   * Hide entries whose declared DSH support stops below the running host
+   * (config `hideOutdatedPlugins`, default on). Entries with no verdict yet,
+   * or none to be had, stay visible — the filter never guesses.
+   */
+  hideOutdatedPlugins?: boolean
+  /**
    * Operator blacklist (normalized tokens): entries matching any token are
    * hidden. Absent/empty means no blacklist is configured.
    */
@@ -533,6 +552,12 @@ export function visiblePlugins(plugins: RegistryPlugin[], options: ListQuery): R
     if (options.sinceDays !== undefined && !withinDays(plugin.added, options.sinceDays)) return []
     if (options.compatibleWithHost === true && plugin.npm != null
       && options.hostCompatibility?.[plugin.npm]?.status === 'incompatible') return []
+    // The outdated filter is deliberately its own switch, not folded into the
+    // one above: `status` forgives an implicit `^`/`~` ceiling (see
+    // declarationResult), and "only claims support for an older DSH" is
+    // precisely the verdict this filter exists to act on.
+    if (options.hideOutdatedPlugins === true && plugin.npm != null
+      && options.hostCompatibility?.[plugin.npm]?.outdated === true) return []
     const relevance = query === '' ? 0 : pluginRelevance(plugin, query, tokens, options.lang, options.categories)
     return relevance === 0 && query !== '' ? [] : [{ plugin, relevance, index }]
   })

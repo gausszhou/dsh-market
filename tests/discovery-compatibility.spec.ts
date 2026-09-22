@@ -88,6 +88,61 @@ describe('deriveHostCompatibility', () => {
   })
 })
 
+describe('deriveHostCompatibility — outdated', () => {
+  it('flags a declared ceiling the running host has passed', () => {
+    // A written ceiling.
+    expect(deriveHostCompatibility(facts({ enginesDsh: '<0.1.2' }), '0.1.5-rc.2', HOST_PACKAGES).outdated)
+      .toBe(true)
+    // An exact pin to an older release is the strongest ceiling there is.
+    expect(deriveHostCompatibility(facts({ enginesDsh: '0.1.2-rc.1' }), '0.1.5-rc.2', HOST_PACKAGES).outdated)
+      .toBe(true)
+  })
+
+  it('flags the sloppy caret that `status` deliberately forgives', () => {
+    // This is the case the outdated filter exists for: `^0.0.1` is not worth
+    // blocking an install over, so `status` stays compatible — but the host
+    // has still climbed past the only version the plugin ever claimed.
+    const result = deriveHostCompatibility(facts({
+      peerDependencies: { '@deepseek-ai/dsh-tools': '^0.0.1' },
+    }), '0.1.2-alpha.2', HOST_PACKAGES)
+    expect(result.status).toBe('compatible')
+    expect(result.outdated).toBe(true)
+  })
+
+  it('leaves open-ended, wildcard and unreadable declarations alone', () => {
+    for (const range of ['>=0.1.1-rc.2', '>0.1.1-rc.2', '*', 'catalog:current', 'latest']) {
+      expect(deriveHostCompatibility(facts({ enginesDsh: range }), '0.1.5-rc.2', HOST_PACKAGES).outdated, range)
+        .toBe(false)
+    }
+  })
+
+  it('keeps a host still inside the declared range current', () => {
+    expect(deriveHostCompatibility(facts({ enginesDsh: '^0.1.2-alpha.2' }), '0.1.5-rc.2', HOST_PACKAGES).outdated)
+      .toBe(false)
+    // An alternation only counts once the host is above EVERY alternative.
+    expect(deriveHostCompatibility(facts({ enginesDsh: '0.1.5-rc.2 || 0.1.2-rc.1' }), '0.1.5-rc.2', HOST_PACKAGES).outdated)
+      .toBe(false)
+  })
+
+  it('flags one passed ceiling even when another declaration is open-ended', () => {
+    // Declarations are conjunctive, so an entry whose pinned peer stops at an
+    // older release does not cover this host, whatever the engine field says.
+    const result = deriveHostCompatibility(facts({
+      enginesDsh: '>=0.1.0',
+      peerDependencies: { '@deepseek-ai/dsh-settings': '0.1.2-rc.1' },
+    }), '0.1.5-rc.2', HOST_PACKAGES)
+    expect(result.outdated).toBe(true)
+  })
+
+  it('never calls a missing verdict outdated', () => {
+    // No manifest, no declaration, no host version: nothing to be above, and
+    // an entry must only be hidden for something it declared itself.
+    expect(deriveHostCompatibility(null, '0.1.5-rc.2', HOST_PACKAGES).outdated).toBe(false)
+    expect(deriveHostCompatibility(facts(), '0.1.5-rc.2', HOST_PACKAGES).outdated).toBe(false)
+    expect(deriveHostCompatibility(facts({ enginesDsh: '<0.1.2' }), null, HOST_PACKAGES).outdated).toBe(false)
+  })
+})
+
 describe('manifestFacts', () => {
   it('retains only bounded string declarations from the public manifest', () => {
     expect(manifestFacts({

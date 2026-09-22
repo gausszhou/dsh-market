@@ -138,6 +138,24 @@ function hasExplicitUpperOrExact(bounds: AlternativeBounds[]): boolean {
   return bounds.every(alternative => alternative.exact !== null || alternative.explicitUpper)
 }
 
+/**
+ * Whether `resolved` sits ABOVE every upper bound of `range` — the
+ * declaration has stopped reaching the running version on the high side.
+ *
+ * This answers a different question than `classifyPeer` does. That one asks
+ * "is this mismatch worth blocking an install for", which is why it forgives
+ * an implicit `^`/`~` ceiling: `^0.0.1` is a sloppy declaration that works in
+ * practice, and refusing to install over it would be a false positive. This
+ * one asks "does the declared range still cover the running host at all", so
+ * an implicit ceiling counts exactly like a written one, and only a range
+ * with no ceiling to be above (`>=1.2.3`, `>1.2.3`, `*`, anything
+ * unparseable) answers false. Discovery's outdated filter is built on it.
+ */
+export function isAboveRangeCeiling(resolved: string, range: string): boolean {
+  const bounds = boundsFor(range)
+  return bounds !== null && aboveAllMaxes(resolved, bounds)
+}
+
 /** Translate one confirmed peer mismatch into a directional verdict. */
 export function classifyPeer(
   plugin: string,

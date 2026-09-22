@@ -61,6 +61,17 @@ describe('MarketSettings schema', () => {
     expect(MarketSettings({ enableSelfUpdate: true }).enableSelfUpdate).toBe(true)
   })
 
+  it('defaults hideOutdatedPlugins to on', () => {
+    // The protective side of the default: an unconfigured market hides an
+    // entry that declared a DSH ceiling this host has already passed. Only a
+    // plugin that said so itself can be hidden by it.
+    expect(MarketSettings({}).hideOutdatedPlugins).toBe(true)
+  })
+
+  it('accepts an explicit off', () => {
+    expect(MarketSettings({ hideOutdatedPlugins: false }).hideOutdatedPlugins).toBe(false)
+  })
+
   it('claims only what this namespace actually stores', () => {
     // The release channel was in here for one version, and it made this a
     // SECOND writer for a value that lives in the market's state.json. The
@@ -76,10 +87,12 @@ describe('MarketSettings schema', () => {
     // lists read), not a second writer for a value stored elsewhere.
     // `enableSelfUpdate` is the same class of widening: schema →
     // resolved.enableSelfUpdate → the update route guard and detection.
+    // `hideOutdatedPlugins` too: schema → resolved.hideOutdatedPlugins →
+    // the status payload the lists filter on.
     // The consequence itself is caught in layer 3 (tests/web/channel.e2e.ts)
     // against a real settings service, per this file's own rule about not
     // hand-writing a stand-in for a contract we did not author.
-    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart', 'blacklist', 'enableSelfUpdate'])
+    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart', 'blacklist', 'enableSelfUpdate', 'hideOutdatedPlugins'])
   })
 })
 

@@ -648,6 +648,46 @@ describe('MarketSection (jsdom)', () => {
     expect(screen.queryByText(/Filtering for DSH/)).toBeNull()
   })
 
+  it('hides entries whose declared DSH ceiling this host has passed, and says so', async () => {
+    const plugins = [
+      { ...REGISTRY.plugins[0], name: 'current', npm: 'current', url: 'https://github.com/a/current' },
+      { ...REGISTRY.plugins[0], name: 'stale', npm: 'stale', url: 'https://github.com/a/stale' },
+    ]
+    const registry = { source: 'live', hostVersion: '0.1.5-rc.2', registry: { ...REGISTRY, count: plugins.length, plugins } }
+    // Both entries read as `compatible` — the sloppy `^0.0.1` case the status
+    // verdict forgives — so only the `outdated` flag can tell them apart.
+    const compatibility = (body: any) => ({
+      hostVersion: '0.1.5-rc.2',
+      plugins: Object.fromEntries(body.packages.map((name: string) => [name, {
+        status: 'compatible',
+        basis: 'manifest',
+        requirement: '^0.0.1',
+        declarations: [{ kind: 'engine', range: '^0.0.1' }],
+        outdated: name === 'stale',
+      }])),
+    })
+    stubFetch({ '/dsh-market/registry': registry, '/dsh-market/discovery-compatibility': compatibility })
+
+    render(<MarketSection {...props()} />)
+    // The fork ships with the filter ON: the stale entry never lands, and the
+    // list has to say why it is shorter than the catalog.
+    await screen.findByText('current')
+    await screen.findByText(en.outdatedFilterActive.replace('{0}', '1'))
+    expect(screen.queryByText('stale')).toBeNull()
+
+    // `hideOutdatedPlugins: false` from the status payload is the documented
+    // escape hatch, and it has to reach the browser without a reload.
+    cleanup()
+    stubFetch({
+      '/dsh-market/registry': registry,
+      '/dsh-market/discovery-compatibility': compatibility,
+      '/dsh-market/status': { active: false, pnpm: true, boot: 'boot-1', restart: true, installed: {}, hideOutdatedPlugins: false },
+    })
+    render(<MarketSection {...props()} />)
+    await screen.findByText('stale')
+    expect(screen.queryByText(en.outdatedFilterActive.replace('{0}', '1'))).toBeNull()
+  })
+
   it('the install dialog opens with Confirm/Cancel and closes on cancel', async () => {
     render(<MarketSection {...props()} />)
     await screen.findByText('dsh-loop')

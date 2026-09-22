@@ -38,6 +38,7 @@ dsh plugin --profile web add @gausszhou/dsh-market
 - **一键安装**——确认来源，实时进度；多数插件刷新页面即可用，无需重启
 - **备份与恢复**——把 profile 的插件清单与配置导出为可读 JSON，换机导入，存到 WebDAV 并每日自动备份，或通过私有 GitHub Gist 跨机器同步；恢复采用**合并**方式（备份之后新装的插件会保留），写入前校验、失败自动回滚
 - **更新**——逐插件检测（npm 版本或锁定 commit 对比 HEAD），一键更新或全部更新。**本 fork 默认不更新自己**（`enableSelfUpdate` 默认为 `false`）；在插件配置里改回 `true` 才恢复市场自身的更新入口
+- **旧版 DSH 过滤**——**本 fork 默认开启**：目录条目声明的 DSH 支持上限低于你正在运行的 DSH 时（读取其 npm manifest 的 `engines.dsh` 与 DSH peer 范围），该条目会从「发现」与「主题」列表里隐藏，免得列表被只适配旧版的插件占据。未声明宿主要求、或要求读不出来的条目仍然显示，列表也会说明隐藏了多少条。在插件配置里写 `hideOutdatedPlugins: false` 即可关闭
 - **GitHub 多线路容错**——中国大陆下载区域会为 Git ref、README 与头像分别维护 fallback 顺序，记住上次可用线路，只在传输、HTTP 状态或响应内容校验失败后换线，并拒绝公共反代伪装成 HTTP 200 的 HTML 错误页。内置线路全部失效时，可到**设置 → 插件 → 插件配置 → GitHub 加速**填写一个持久化的自定义 HTTPS 前缀；运维设置的 `DSHM_GITHUB_PROXY` 始终优先
 - **公共更新接口**——插件自己的设置页可调用带版本号、能力探测和回滚状态的[更新 API v1](UPDATE-API-V1.md)（beta），无需复制包管理逻辑，也不依赖市场 UI 的私有响应字段
 - **卸载**——两步确认防误触；本次会话装的插件即点即卸
@@ -82,6 +83,17 @@ dsh plugin --profile web add @gausszhou/dsh-market
     config:
       enableSelfUpdate: true
   ```
+
+  **只声明支持旧版 DSH 的插件默认会被隐藏。** 市场会读取目录条目在 npm 上的公开 manifest（`engines.dsh` 以及它的 `@deepseek-ai/dsh*` peer 范围），把声明上限已经被当前 DSH 越过的条目滤掉——比如插件把自己钉在 `0.1.2-rc.1`，而你跑的是 `0.1.5-rc.2`。没有声明宿主要求、或要求读不出来的条目保持显示：只有插件自己说过的话才能让它被隐藏。「发现」和「主题」列表会说明隐藏了多少条、以及去哪里关掉：
+
+  ```yaml
+  - id: dsh-market
+    name: '@gausszhou/dsh-market'
+    config:
+      hideOutdatedPlugins: false
+  ```
+
+  读取这些 manifest 是有上限、带缓存的查询（磁盘缓存 24 小时）：冷缓存后第一次打开目录会一次性核对几千个包，之后就是瞬时的；关掉这个过滤则完全跳过这次查询。
 - 从终端启动时，替代进程脱离原终端，关闭原终端后仍会继续运行
 - 收录 ≠ 背书:插件是第三方代码,请只安装你信任的来源
 

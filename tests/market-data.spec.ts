@@ -629,6 +629,45 @@ describe('discover list (visiblePlugins)', () => {
       category: 'all', query: '', lang: 'en', sort: 'x', hostCompatibility, compatibleWithHost: true,
     }).map(plugin => plugin.name)).toEqual(['matches', 'undeclared', 'not-loaded-yet', 'github-only'])
   })
+
+  it('hides entries whose declared DSH ceiling the host has passed', () => {
+    const rows = [
+      plugin({ name: 'current', npm: 'current' }),
+      plugin({ name: 'stale', npm: 'stale' }),
+      plugin({ name: 'sloppy-but-compatible', npm: 'sloppy' }),
+      plugin({ name: 'no-verdict-yet', npm: 'pending' }),
+      plugin({ name: 'github-only', npm: null }),
+    ]
+    const base = { basis: 'manifest' as const, requirement: '^0.1.2-alpha.2', declarations: [] }
+    const hostCompatibility = {
+      current: { ...base, status: 'compatible' as const, outdated: false },
+      stale: { ...base, status: 'incompatible' as const, outdated: true },
+      // `status` forgives the sloppy caret, the outdated filter must not.
+      sloppy: { ...base, status: 'compatible' as const, outdated: true },
+      pending: { status: 'unknown' as const, basis: 'undeclared' as const, requirement: null, declarations: [], outdated: false },
+    }
+
+    // Off leaves the list exactly as the catalog has it.
+    expect(visiblePlugins(rows, {
+      category: 'all', query: '', lang: 'en', sort: 'x', hostCompatibility, hideOutdatedPlugins: false,
+    }).map(plugin => plugin.name)).toEqual(rows.map(plugin => plugin.name))
+
+    expect(visiblePlugins(rows, {
+      category: 'all', query: '', lang: 'en', sort: 'x', hostCompatibility, hideOutdatedPlugins: true,
+    }).map(plugin => plugin.name)).toEqual(['current', 'no-verdict-yet', 'github-only'])
+  })
+
+  it('keeps an entry whose verdict predates the field visible', () => {
+    // A host too old to send `outdated` must not be read as a verdict of
+    // true — the entry stays visible rather than being hidden on a guess.
+    const rows = [plugin({ name: 'legacy', npm: 'legacy' })]
+    const hostCompatibility = {
+      legacy: { status: 'compatible' as const, basis: 'manifest' as const, requirement: '>=0.1.0', declarations: [] },
+    }
+    expect(visiblePlugins(rows, {
+      category: 'all', query: '', lang: 'en', sort: 'x', hostCompatibility, hideOutdatedPlugins: true,
+    }).map(plugin => plugin.name)).toEqual(['legacy'])
+  })
 })
 
 describe('discover pager (pageItems)', () => {

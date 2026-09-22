@@ -98,12 +98,15 @@ export interface MarketSettings {
   blacklist: string[]
   /** Whether the market may update ITSELF; default off — needs an explicit true. */
   enableSelfUpdate: boolean
+  /** Hide catalog entries whose declared DSH support stops below this host. */
+  hideOutdatedPlugins: boolean
 }
 
 export const MarketSettings: z<MarketSettings> = z.object({
   allowRestart: z.boolean().default(true),
   blacklist: z.array(z.string()).default([]),
   enableSelfUpdate: z.boolean().default(false),
+  hideOutdatedPlugins: z.boolean().default(true),
 })
 
 /** Serve the Desktop card without claiming settings-controlled restart. */
@@ -129,7 +132,7 @@ export function installDesktopMarketSettings(ctx: Context): void {
  * @param ctx - the plugin context owning the wiring.
  * @param resolved - the live config object the routes read.
  */
-export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[]; enableSelfUpdate?: boolean }): void {
+export function installMarketSettings(ctx: Context, resolved: { allowRestart?: boolean; blacklist?: string[]; enableSelfUpdate?: boolean; hideOutdatedPlugins?: boolean }): void {
   // The switch must show what the routes will actually DO, which since #229
   // is not simply "unset means on": under a detected supervisor an unset
   // value means off, because the supervisor owns restarts. Asking
@@ -140,6 +143,11 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
     allowRestart: restartAllowed(resolved),
     blacklist: resolved.blacklist ?? [],
     enableSelfUpdate: resolved.enableSelfUpdate ?? false,
+    // Unset means ON here, unlike enableSelfUpdate: the filter only hides a
+    // plugin that declared a DSH ceiling this host has passed, so the default
+    // is the protective side. `?? true` rather than `=== true` for exactly
+    // that reason — an unconfigured market filters, and the switch says so.
+    hideOutdatedPlugins: resolved.hideOutdatedPlugins ?? true,
   }
   let source = (): MarketSettings => entry
   // Assigns ONLY what this namespace owns. Writing back a field the market
@@ -148,6 +156,7 @@ export function installMarketSettings(ctx: Context, resolved: { allowRestart?: b
     resolved.allowRestart = source().allowRestart
     resolved.blacklist = source().blacklist
     resolved.enableSelfUpdate = source().enableSelfUpdate
+    resolved.hideOutdatedPlugins = source().hideOutdatedPlugins
   }
 
   // `inject` is the graceful-degradation boundary: on a host with no
