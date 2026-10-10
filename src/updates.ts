@@ -365,6 +365,14 @@ export async function checkUpdates(
    */
   onlineSourceFor: ReadonlyMap<string, string> = new Map(),
   /**
+   * Packages excluded from update detection ENTIRELY. The market's own name
+   * when self-updates are disabled (`enableSelfUpdate: false`, the default):
+   * the entry is skipped before any lookup, so nothing is fetched, answered,
+   * or offered. Blocking has to be total — a self-update that is "reported
+   * but not offered" is one pnpm invocation away from being applied anyway.
+   */
+  excluded: ReadonlySet<string> = new Set(),
+  /**
    * Registry names an archive-URL install may be checked against, keyed by
    * the GitHub repo (`owner/repo`) the archive came from (#768). Without an
    * entry that owns both the repo and the name, the npm fallback would
@@ -376,8 +384,9 @@ export async function checkUpdates(
   // The channel is part of the key: switching to betas has to change the
   // answer immediately, and a cache keyed on the profile alone would serve
   // the stable verdict for the rest of the TTL — reading as "the setting did
-  // nothing".
-  const cacheKey = `${activeProfileDir}\u0000${[...channelFor].map(([n, c]) => `${n}:${c}`).sort().join(',')}\u0000${[...onlineSourceFor].map(([n, s]) => `${n}:${s}`).sort().join(',')}\u0000${[...catalogNpmByRepo].map(([n, s]) => `${n}:${s}`).sort().join(',')}`
+  // nothing". Excluded names ride the same key, so toggling enableSelfUpdate
+  // invalidates a listing that was computed under the other setting.
+  const cacheKey = `${activeProfileDir}\u0000${[...channelFor].map(([n, c]) => `${n}:${c}`).sort().join(',')}\u0000${[...onlineSourceFor].map(([n, s]) => `${n}:${s}`).sort().join(',')}\u0000${[...excluded].sort().join(',')}\u0000${[...catalogNpmByRepo].map(([n, s]) => `${n}:${s}`).sort().join(',')}`
   if (!force && updatesCache?.key === cacheKey && Date.now() - updatesCache.at < UPDATES_TTL_MS) {
     return updatesCache.data
   }
@@ -385,6 +394,10 @@ export async function checkUpdates(
   const lockCommits = readLockCommits(profile, activeProfileDir)
   const result: Record<string, UpdateStatus> = {}
   await Promise.all(Object.entries(installed).map(async ([name, spec]) => {
+    // A blocked name never enters the result: no status means no update row,
+    // no reminder banner, no button. `updateAvailable: false` would read as
+    // "up to date" rather than "not offered", which is a lie with a button.
+    if (excluded.has(name)) return
     const version = readInstalledVersion(profile, name, activeProfileDir)
     const normalizedSpec = spec.toLowerCase()
     if (normalizedSpec.startsWith('file:')) {

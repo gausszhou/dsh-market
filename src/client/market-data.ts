@@ -210,6 +210,12 @@ export interface MarketStatus {
   version?: string
   /** Whether the profile package manager owns the market dependency. */
   selfManaged?: boolean
+  /** Whether the market may update ITSELF (config enableSelfUpdate, default off). */
+  enableSelfUpdate?: boolean
+  /** Catalog blacklist tokens; matching entries are hidden from the lists. */
+  blacklist?: string[]
+  /** Catalog category ids whose entries are hidden from the lists. */
+  categoryBlacklist?: string[]
   /** Legacy single prefix for browser bundles predating githubRoutes. */
   githubProxy?: string | null
   /** Ordered per-service routes; null means the canonical GitHub URL. */
@@ -437,6 +443,36 @@ export interface ListQuery {
   hostCompatibility?: HostCompatibilityMap
   /** Hide only entries that are known to be incompatible; unknown stays visible. */
   compatibleWithHost?: boolean
+  /** Catalog blacklist tokens from the market config; matching entries are hidden. */
+  blacklist?: ReadonlySet<string>
+  /** Catalog category ids whose entries are hidden; ANY blocked category hides the entry. */
+  categoryBlacklist?: ReadonlySet<string>
+}
+
+/**
+ * Whether a catalog entry matches any configured blacklist token.
+ *
+ * A token matches any identity the entry is known by — bare name, npm
+ * package name, repo root (`owner/repo`), the subpath form
+ * (`owner/repo#path:/sub`), and the full normalized URL. Tokens arrive
+ * pre-normalized from the server (trimmed, lowercased, de-duplicated); the
+ * URL is normalized here because it is not one of the identity forms above.
+ * Unknown tokens are simply never hit — a blacklist is a filter, not a list
+ * that needs stale-entry bookkeeping.
+ */
+export function isBlacklisted(plugin: RegistryPlugin, blacklist: ReadonlySet<string> | undefined): boolean {
+  if (blacklist === undefined || blacklist.size === 0) return false
+  if (blacklist.has(plugin.url.trim().toLowerCase().replace(/\/+$/u, ''))) return true
+  for (const id of entryIdentities(plugin)) {
+    if (blacklist.has(id)) return true
+  }
+  // A subpath catalog entry identifies as `repo#path:/sub` only — exact by
+  // design for installed-state matching, where a bare root would let two
+  // subpackages of one monorepo cross-match. A blacklist token names INTENT
+  // instead: `owner/repo` means "nothing from this repo", so the bare root
+  // is matched explicitly here.
+  const repo = /^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\/|$)/iu.exec(plugin.url)
+  return repo !== null && blacklist.has(repo[1]!.toLowerCase())
 }
 
 /**
@@ -446,7 +482,7 @@ export interface ListQuery {
  * standing in it."
  */
 export function isMarketItself(plugin: Pick<RegistryPlugin, 'name' | 'npm'>): boolean {
-  return plugin.name === 'dsh-market' || plugin.npm === 'dshmarket'
+  return plugin.name === 'dsh-market' || plugin.name === '@gausszhou/dsh-market' || plugin.npm === 'dshmarket' || plugin.npm === '@gausszhou/dsh-market'
 }
 
 /**
@@ -583,6 +619,15 @@ export function visiblePlugins(plugins: RegistryPlugin[], options: ListQuery): R
     if (isMarketItself(plugin)) return []
     const categories = pluginCategories(plugin)
     if (options.category !== 'all' && !categories.includes(options.category)) return []
+    // Blacklist filters run before search so a blocked entry can never
+    // reappear through a query; category blocking is the same kind of
+    // operator choice, so both sit here with the other list filters.
+    if (options.blacklist !== undefined && isBlacklisted(plugin, options.blacklist)) return []
+    // Category ids are compared lowercased: the server normalizes tokens to
+    // lowercase, while the catalog may carry a capitalized slug — the two
+    // have to meet.
+    if (options.categoryBlacklist !== undefined && options.categoryBlacklist.size > 0
+      && categories.some(category => options.categoryBlacklist!.has(category.toLowerCase()))) return []
     if (options.sinceDays !== undefined && !withinDays(plugin.added, options.sinceDays)) return []
     if (options.compatibleWithHost === true && plugin.npm != null
       && options.hostCompatibility?.[plugin.npm]?.status === 'incompatible') return []

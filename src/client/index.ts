@@ -55,11 +55,11 @@ interface SettingsScopeHost {
  * The package name the host keys a bundle's own configuration by.
  *
  * `plugins.bundle.config` on dsh 0.1.7+ is keyed by the BUNDLE's package
- * name. The market's is `dshmarket` — the name `dsh plugin add dshmarket`
- * installs and the one its own `package.json` declares — which is not the
+ * name. The market's is `@gausszhou/dsh-market` — the name the fork
+ * publishes and the one its own `package.json` declares — which is not the
  * same string as the locale namespace (`dsh-market`) this file uses for copy.
  */
-const MARKET_PACKAGE_NAME = 'dshmarket'
+const MARKET_PACKAGE_NAME = '@gausszhou/dsh-market'
 
 /** The subset of the theme service this plugin touches. */
 interface ThemeService {

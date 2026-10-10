@@ -28,6 +28,7 @@ function stubFetch(options: {
   region?: string; regionAuto?: boolean; regionError?: string; githubProxy?: string | null
   githubProxyCustom?: string | null; githubProxyManaged?: boolean; githubProxyError?: string
   buildEnv?: Record<string, string>; buildEnvError?: string
+  enableSelfUpdate?: boolean
 } = {}): void {
   calls = []
   let githubProxyCustom = options.githubProxyCustom ?? null
@@ -54,6 +55,10 @@ function stubFetch(options: {
         githubProxyCustom,
         githubProxyManaged: options.githubProxyManaged === true,
         selfManaged: options.selfManaged !== false,
+        // The stub defaults to ENABLED: these specs probe the update-offer
+        // mechanics, not the config default (pinned in routes.spec). The
+        // blocked-by-default card state has its own test below.
+        enableSelfUpdate: options.enableSelfUpdate !== false,
         buildEnv: options.buildEnv ?? {},
       })
     }
@@ -149,6 +154,20 @@ describe('SettingsCard', () => {
     expect(screen.getByRole('button', { name: t('setSelfUpdate') })).toBeTruthy()
   })
 
+  it('states that self-updates are disabled instead of rendering a button (enableSelfUpdate off)', async () => {
+    // enableSelfUpdate defaults to false: the server never offers the
+    // market's own update, so the row must say why there is no button
+    // rather than reading the silence as "up to date".
+    stubFetch({ enableSelfUpdate: false, latest: '1.13.0' })
+    await open()
+    await waitFor(() => { expect(screen.getByText(t('setSelfUpdateBlocked'))).toBeTruthy() })
+    expect(screen.getByText(t('setSelfUpdateBlockedHint'))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: t('setSelfUpdate') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('restoreOnline') })).toBeNull()
+    // The channel row is where the switch back lives — the hint says so.
+    expect(screen.getByText(t('setChannel'))).toBeTruthy()
+  })
+
   it('names a newer release for a host-installed market without offering to apply it (#497)', async () => {
     stubFetch({ version: '1.38.1', latest: '1.41.0', kind: 'generation' })
     await open()
@@ -168,7 +187,7 @@ describe('SettingsCard', () => {
     fireEvent.click(screen.getByRole('button', { name: t('restoreContinue') }))
     await waitFor(() => {
       expect(calls.find(call => call.path.endsWith('/dsh-market/update'))?.body)
-        .toEqual({ name: 'dshmarket', restore: true })
+        .toEqual({ name: '@gausszhou/dsh-market', restore: true })
     })
   })
 

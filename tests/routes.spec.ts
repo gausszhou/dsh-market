@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dump } from 'js-yaml'
-import { mountMarketRoutes, type MarketHost } from '../src/routes.ts'
+import { mountMarketRoutes, normalizeBlacklist, normalizeCategoryBlacklist, type MarketConfig, type MarketHost } from '../src/routes.ts'
 import { sameOrigin } from '../src/http.ts'
 import { readMarketState, writeMarketState } from '../src/hot.ts'
 import * as orderApi from '../src/order.ts'
@@ -38,7 +38,7 @@ const HOST = '127.0.0.1:3080'
  * Mount the market routes against a stub host. The returned `routes` map is
  * keyed by path so tests can invoke each handler directly.
  */
-function mount(commandRuntime?: PluginCommandRuntime): { host: MarketHost; routes: Map<string, RouteHandler> } {
+function mount(commandRuntime?: PluginCommandRuntime, config?: Partial<MarketConfig>): { host: MarketHost; routes: Map<string, RouteHandler> } {
   const routes = new Map<string, RouteHandler>()
   const host: MarketHost = {
     webServer: {
@@ -51,7 +51,7 @@ function mount(commandRuntime?: PluginCommandRuntime): { host: MarketHost; route
     loader: { entries: () => [] },
     plugin: () => ({ await: async () => undefined, dispose: async () => undefined }),
   }
-  mountMarketRoutes(host, { profile: 'web' }, commandRuntime)
+  mountMarketRoutes(host, { profile: 'web', ...config }, commandRuntime)
   return { host, routes }
 }
 
@@ -99,7 +99,7 @@ interface RequestOpts {
   rawBody?: string
 }
 
-/** A fake IncomingMessage: headers + an async-iterable body (readJsonBody's only needs). */
+/** A fake IncomingMessage: headers + an async-iterable body (readJsonBody's only needs). A loopback socket keeps the status payload's restart-fence prediction (#782) working. */
 function makeRequest(opts: RequestOpts): IncomingMessage {
   const headers: Record<string, string> = {}
   if (opts.origin !== undefined) headers.origin = opts.origin
@@ -111,6 +111,7 @@ function makeRequest(opts: RequestOpts): IncomingMessage {
     method: opts.method,
     url: opts.url,
     headers,
+    socket: { remoteAddress: '127.0.0.1' },
     [Symbol.asyncIterator]() {
       let i = 0
       return {
@@ -1069,5 +1070,177 @@ describe('POST /dsh-market/restore-snapshot & /dsh-market/delete-snapshot', () =
     const res = await hit(routes, '/dsh-market/delete-snapshot', post('/dsh-market/delete-snapshot', { snapshot: 'snapshot-does-not-exist' }))
     expect(res.status).toBe(400)
     expect(String(jsonBody(res).error)).toMatch(/snapshot not found/)
+  })
+})
+
+describe('normalizeBlacklist', () => {
+  it('passes clean tokens through trimmed, lowercased and de-duplicated', () => {
+    expect(normalizeBlacklist([' Theme ', 'theme', 'owner/repo', 'https://github.com/o/x']))
+      .toEqual(['theme', 'owner/repo', 'https://github.com/o/x'])
+  })
+
+  it('drops junk: non-strings, blanks, oversized values and non-arrays', () => {
+    expect(normalizeBlacklist(['ok', 42, null, '', '   ', 'x'.repeat(201)]))
+      .toEqual(['ok'])
+    expect(normalizeBlacklist(undefined)).toEqual([])
+    expect(normalizeBlacklist('not-an-array')).toEqual([])
+  })
+
+  it('caps the payload at MAX_BLACKLIST tokens', () => {
+    const many = Array.from({ length: 250 }, (_, index) => `pkg-${index}`)
+    const out = normalizeBlacklist(many)
+    expect(out).toHaveLength(200)
+    expect(out[0]).toBe('pkg-0')
+    expect(out[199]).toBe('pkg-199')
+  })
+})
+
+describe('normalizeCategoryBlacklist', () => {
+  it('passes clean category ids through trimmed, lowercased and de-duplicated', () => {
+    expect(normalizeCategoryBlacklist([' Theme ', 'theme', 'tools']))
+      .toEqual(['theme', 'tools'])
+  })
+
+  it('drops junk: non-strings, blanks, oversized values and non-arrays', () => {
+    expect(normalizeCategoryBlacklist(['theme', 42, null, '', '   ', 'x'.repeat(201)]))
+      .toEqual(['theme'])
+    expect(normalizeCategoryBlacklist(undefined)).toEqual([])
+    expect(normalizeCategoryBlacklist('not-an-array')).toEqual([])
+  })
+
+  it('shares the blacklist cap', () => {
+    const many = Array.from({ length: 250 }, (_, index) => `cat-${index}`)
+    const out = normalizeCategoryBlacklist(many)
+    expect(out).toHaveLength(200)
+    expect(out[0]).toBe('cat-0')
+    expect(out[199]).toBe('cat-199')
+  })
+})
+
+describe('enableSelfUpdate config', () => {
+  it('reports self-updates disabled by default in the status payload', async () => {
+    // Self-update is off by default; the card must say so rather than
+    // reading the absence of an update button as "up to date".
+    const res = await hit(routes, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).enableSelfUpdate).toBe(false)
+  })
+
+  it('reports self-updates enabled when the config says so', async () => {
+    const enabled = mount(undefined, { enableSelfUpdate: true }).routes
+    const res = await hit(enabled, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).enableSelfUpdate).toBe(true)
+  })
+
+  it('refuses a self-update by default, by either of the market\'s own names', async () => {
+    for (const name of ['dshmarket', 'dsh-market']) {
+      const res = await hit(routes, '/dsh-market/update', post('/dsh-market/update', { name }))
+      expect(res.status, name).toBe(400)
+      expect(String(jsonBody(res).error), name).toContain('enableSelfUpdate')
+    }
+  })
+
+  it('does not apply the self-update guard when enableSelfUpdate is true', async () => {
+    const enabled = mount(undefined, { enableSelfUpdate: true }).routes
+    const res = await hit(enabled, '/dsh-market/update', post('/dsh-market/update', { name: 'dshmarket' }))
+    // Falls through to the ordinary path (no profile manifest yet → its own
+    // error) — never the config-block message.
+    expect(String((res.json() as { error?: unknown }).error ?? '')).not.toContain('enableSelfUpdate')
+  })
+
+  it('omits the installed market from update checks while self-updates are disabled (the default)', async () => {
+    writeProfile(['dshmarket'])
+    const blocked = mount().routes
+    // The route's catalog source lookup would otherwise reach the network;
+    // a failing stub is the same answer the unit lane gives every spec.
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })))
+    try {
+      const res = await hit(blocked, '/dsh-market/updates', { method: 'GET', url: '/dsh-market/updates' })
+      expect(res.status).toBe(200)
+      const updates = (jsonBody(res).updates ?? {}) as Record<string, unknown>
+      expect(updates['dshmarket']).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('includes the installed market in update checks when explicitly enabled', async () => {
+    writeProfile(['dshmarket'])
+    const enabled = mount(undefined, { enableSelfUpdate: true }).routes
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })))
+    try {
+      const res = await hit(enabled, '/dsh-market/updates', { method: 'GET', url: '/dsh-market/updates' })
+      expect(res.status).toBe(200)
+      const updates = (jsonBody(res).updates ?? {}) as Record<string, unknown>
+      expect(updates['dshmarket']).toBeDefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('categoryBlacklist config', () => {
+  it('reports an empty category blacklist by default, as a config-report field', async () => {
+    const res = await hit(routes, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).categoryBlacklist).toEqual([])
+  })
+
+  it('reports configured category ids normalized for the browser', async () => {
+    const mounted = mount(undefined, { categoryBlacklist: [' Theme ', 'theme', 'tools'] }).routes
+    const res = await hit(mounted, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).categoryBlacklist).toEqual(['theme', 'tools'])
+  })
+
+  it('reports the entry blacklist, normalized, alongside the category one', async () => {
+    const mounted = mount(undefined, { blacklist: ['Owner/Repo', ' theme '], categoryBlacklist: ['theme'] }).routes
+    const res = await hit(mounted, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    expect(jsonBody(res).blacklist).toEqual(['owner/repo', 'theme'])
+    expect(jsonBody(res).categoryBlacklist).toEqual(['theme'])
+  })
+})
+
+describe('fork acceptance config (@gausszhou/dsh-market)', () => {
+  // The deployment this fork ships as: the scoped package name, the China
+  // download region, and the operator's catalog blacklist. One testbed so
+  // the three claims cannot drift apart.
+  const forkConfig = {
+    region: 'china' as const,
+    blacklist: ['dsh-better-sidebar', '@linxin666/dsh-remote-web-ui', 'dsh-dream-skin'],
+  }
+
+  it('reports the configured region, blacklist and self-update state in the status payload', async () => {
+    const mounted = mount(undefined, forkConfig).routes
+    const res = await hit(mounted, '/dsh-market/status', { method: 'GET', url: '/dsh-market/status' })
+    expect(res.status).toBe(200)
+    const body = jsonBody(res) as Record<string, unknown>
+    expect(body.region).toBe('china')
+    expect(body.blacklist).toEqual(['dsh-better-sidebar', '@linxin666/dsh-remote-web-ui', 'dsh-dream-skin'])
+    // Self-updates stay off by default even with the rest configured.
+    expect(body.enableSelfUpdate).toBe(false)
+  })
+
+  it('refuses to update the market under its own scoped package name by default', async () => {
+    const mounted = mount(undefined, forkConfig).routes
+    const res = await hit(mounted, '/dsh-market/update', post('/dsh-market/update', { name: '@gausszhou/dsh-market' }))
+    expect(res.status).toBe(400)
+    expect(String(jsonBody(res).error)).toContain('enableSelfUpdate')
+  })
+
+  it('omits the market installed under its scoped package name from update checks', async () => {
+    writeProfile(['@gausszhou/dsh-market'])
+    const mounted = mount(undefined, forkConfig).routes
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: 404, json: async () => ({}), text: async () => '' })))
+    try {
+      const res = await hit(mounted, '/dsh-market/updates', { method: 'GET', url: '/dsh-market/updates' })
+      expect(res.status).toBe(200)
+      const updates = (jsonBody(res).updates ?? {}) as Record<string, unknown>
+      expect(updates['@gausszhou/dsh-market']).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })

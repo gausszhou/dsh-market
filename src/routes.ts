@@ -154,6 +154,27 @@ export interface MarketConfig {
   /** Snapshots retained per profile (issue #98); defaults to DEFAULT_MAX_SNAPSHOTS. */
   maxSnapshots?: number
   /**
+   * Catalog blacklist: tokens matching an entry's name, npm package,
+   * owner/repo or full URL hide it from the Discover and Themes lists.
+   * Configurable through the profile patch and this plugin's settings page.
+   */
+  blacklist?: string[]
+  /**
+   * Category blacklist: catalog category ids (`theme`, `tools`, ...) whose
+   * entries are hidden from the Discover and Themes lists — blocking
+   * "Themes & Appearance" removes every theme entry, for instance. An entry
+   * carrying ANY blocked category is hidden. Configurable through the
+   * profile patch and this plugin's settings page.
+   */
+  categoryBlacklist?: string[]
+  /**
+   * Whether the market may update ITSELF. Default false — the market does
+   * not self-update unless explicitly enabled. Set true to let the market
+   * offer and apply its own updates again. Other packages never follow
+   * this setting — a decision about the market is about the market only.
+   */
+  enableSelfUpdate?: boolean
+  /**
    * Environment variables pinned for plugin build/install commands (issue
    * #336): the compiler (CC/CXX) or anything else a native build reads, for
    * hosts whose dsh process cannot inherit a shell environment. These may
@@ -201,7 +222,45 @@ export function marketVersion(): string {
 }
 
 /** The market's own package names, as they appear in a profile manifest. */
-const SELF_NAMES = new Set(['dshmarket', 'dsh-market'])
+const SELF_NAMES = new Set(['dshmarket', 'dsh-market', '@gausszhou/dsh-market'])
+
+/** Cap on blacklist tokens a status payload will carry. */
+const MAX_BLACKLIST = 200
+
+/**
+ * Normalize the configured catalog blacklist for the client.
+ *
+ * Tokens are trimmed, lowercased, de-duplicated, capped, and junk dropped
+ * (non-strings, empty strings, >200-char values). The client renders the
+ * status payload directly, so anything that reaches it must be matchable
+ * as-is — `isBlacklisted` normalizes only the entry URL, trusting everything
+ * else to have been cleaned here.
+ */
+export function normalizeBlacklist(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const item of raw) {
+    if (typeof item !== 'string') continue
+    const token = item.trim().toLowerCase()
+    if (token === '' || token.length > 200 || seen.has(token)) continue
+    seen.add(token)
+    out.push(token)
+    if (out.length >= MAX_BLACKLIST) break
+  }
+  return out
+}
+
+/**
+ * Normalize the configured category blacklist for the client. Same contract
+ * as `normalizeBlacklist` — trimmed, lowercased, de-duplicated, capped —
+ * because it is the same shape of filter: tokens the browser matches catalog
+ * entries against as-is. Categories are catalog ids (`theme`, `tools`, ...),
+ * and a hand-written `Theme` becomes `theme`, which is what the catalog uses.
+ */
+export function normalizeCategoryBlacklist(raw: unknown): string[] {
+  return normalizeBlacklist(raw)
+}
 
 /**
  * Rebuild a GitHub target for an update.
@@ -1792,19 +1851,27 @@ export function mountMarketRoutes(
   async function updateCheckInputs(): Promise<{
     channelFor: Map<string, Channel>
     onlineSourceFor: Map<string, string>
+    /** Installed self names, when self-updates are disabled (the default). */
+    excluded: ReadonlySet<string>
     catalogNpmByRepo: Map<string, string>
   }> {
     // Only the market itself follows the channel setting (see
     // MarketSettings.channel): a user opting into betas is volunteering to
     // try THIS plugin early, not to be handed every other author's
-    // unreleased work.
+    // unreleased work. With self-updates disabled the channel is moot for
+    // the market, and its name is excluded from detection entirely.
     const channel = activeChannel()
     const installed = readInstalled(config.profile, activeProfileDir)
+    const selfNames = Object.keys(installed).filter(name => SELF_NAMES.has(name))
+    const selfUpdateEnabled = config.enableSelfUpdate === true
     const channelFor = new Map(
-      Object.keys(installed)
-        .filter(name => SELF_NAMES.has(name))
+      selfNames
+        .filter(name => selfUpdateEnabled)
         .map(name => [name, channel] as const),
     )
+    // Default off: an unset config must not read as "updates allowed". The
+    // name is excluded from the check ENTIRELY, not merely unoffered.
+    const excluded = new Set(selfUpdateEnabled ? [] : selfNames)
     const onlineSourceFor = new Map<string, string>()
     // Which registry name — if any — an archive-URL install may be updated
     // through, keyed by the GitHub repo the archive came from (#768). Same
@@ -1825,7 +1892,7 @@ export function mountMarketRoutes(
     } catch (error) {
       logEvent('warn', 'updates', `package source lookup failed — ${error instanceof Error ? error.message : String(error)}`)
     }
-    return { channelFor, onlineSourceFor, catalogNpmByRepo }
+    return { channelFor, onlineSourceFor, excluded, catalogNpmByRepo }
   }
 
   /**
@@ -1982,8 +2049,8 @@ export function mountMarketRoutes(
           return
         }
         try {
-          const { channelFor, onlineSourceFor, catalogNpmByRepo } = await updateCheckInputs()
-          const updates = await checkUpdates(config.profile, forceCheckFrom(request), activeProfileDir, channelFor, onlineSourceFor, catalogNpmByRepo)
+          const { channelFor, onlineSourceFor, excluded, catalogNpmByRepo } = await updateCheckInputs()
+          const updates = await checkUpdates(config.profile, forceCheckFrom(request), activeProfileDir, channelFor, onlineSourceFor, excluded, catalogNpmByRepo)
           // `packages` carries the same objects the single-package endpoint
           // returns, so one parser serves both. Only updatable ones: a badge
           // wants the count, a panel wants the rows, and neither wants to
@@ -2029,8 +2096,8 @@ export function mountMarketRoutes(
             // The same inputs the market page builds, so a generation (#497)
             // or a catalog-matched local package answers here with the
             // release it can be compared against rather than with nothing.
-            const { channelFor, onlineSourceFor, catalogNpmByRepo } = await updateCheckInputs()
-            const update = (await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor, catalogNpmByRepo))[name]
+            const { channelFor, onlineSourceFor, excluded, catalogNpmByRepo } = await updateCheckInputs()
+            const update = (await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor, excluded, catalogNpmByRepo))[name]
             if (update === undefined) {
               sendJson(response, 404, { schema: UPDATE_API_V1_SCHEMA, error: 'plugin is not installed' })
               return
@@ -3489,6 +3556,14 @@ export function mountMarketRoutes(
           // there. Reported so a bug report can say which host generation it
           // came from instead of leaving the difference invisible.
           settingsNamespace: settingsNamespaceState(),
+          // Config report for the blacklist filters — same payload the
+          // settings page reads and writes back, so edits land without a page
+          // reload and the lists always render what the operator configured.
+          blacklist: normalizeBlacklist(config.blacklist),
+          categoryBlacklist: normalizeCategoryBlacklist(config.categoryBlacklist),
+          // Named so the card can say WHY it is not offering an update — a
+          // missing button is otherwise read as "up to date".
+          enableSelfUpdate: config.enableSelfUpdate === true,
           installed,
         })
       },
@@ -3570,7 +3645,7 @@ export function mountMarketRoutes(
         }
         try {
           const force = (request.url ?? '').includes('force=1')
-          const { channelFor, onlineSourceFor, catalogNpmByRepo } = await updateCheckInputs()
+          const { channelFor, onlineSourceFor, excluded, catalogNpmByRepo } = await updateCheckInputs()
           // Migration hints are this listing's own business: the market page
           // is where "this could come from npm now" is offered, and no other
           // caller acts on it.
@@ -3585,7 +3660,7 @@ export function mountMarketRoutes(
           } catch (error) {
             logEvent('warn', 'updates', `package source lookup failed — ${error instanceof Error ? error.message : String(error)}`)
           }
-          const updates = await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor, catalogNpmByRepo)
+          const updates = await checkUpdates(config.profile, force, activeProfileDir, channelFor, onlineSourceFor, excluded, catalogNpmByRepo)
           for (const [name, migration] of sourceMigrationFor) {
             const status = updates[name]
             if (status !== undefined) updates[name] = { ...status, sourceMigration: migration }
@@ -3876,6 +3951,16 @@ sendJson(response, 200, { updates })
               ? body.compatVersion
               : null
             const restore = body.restore === true
+            // Self-updates disabled is a hard wall, not a softer listing:
+            // detection already excludes the market (updateCheckInputs), but
+            // a stale page could still POST the route, and the route is where
+            // "off" has to be enforced rather than reported.
+            if (SELF_NAMES.has(name) && config.enableSelfUpdate !== true) {
+              sendJson(response, 400, {
+                error: '市场自身的更新已在配置中停用（enableSelfUpdate: false）。需要更新时，请先在插件配置页把它改回 true 再试。 / The market\'s own updates are disabled by configuration (enableSelfUpdate: false). Set it back to true on the plugin configuration page to update the market.',
+              })
+              return
+            }
             const manifestCapture = captureUpdateManifest()
             if (!manifestCapture.ok) {
               sendJson(response, 500, {

@@ -2239,6 +2239,20 @@ export function MarketSection(props: MarketSectionProps) {
   // False when this page reaches dsh through a proxy: a restart from here is refused
   // every time, so the banner says so instead of offering a button (#782).
   const [restartReachable, setRestartReachable] = useState(true)
+  /**
+   * Catalog blacklist tokens from the market config (status payload). Entries
+   * matching any token are hidden from Discover and Themes — a filter, not a
+   * management surface, so the Installed tab never reads it.
+   */
+  const [blacklist, setBlacklist] = useState<readonly string[]>([])
+  const blacklistSet = useMemo(() => new Set(blacklist), [blacklist])
+  /**
+   * Category ids whose entries are hidden (config `categoryBlacklist`, from
+   * the status payload). Same contract as `blacklist`: a filter the lists
+   * match entries against, never a management surface.
+   */
+  const [categoryBlacklist, setCategoryBlacklist] = useState<readonly string[]>([])
+  const categoryBlacklistSet = useMemo(() => new Set(categoryBlacklist), [categoryBlacklist])
   const [restarting, setRestarting] = useState(false)
   const [showTop, setShowTop] = useState(false)
   const [backupBusy, setBackupBusy] = useState(false)
@@ -2539,6 +2553,8 @@ export function MarketSection(props: MarketSectionProps) {
         // Only an explicit false takes the button away. Absent (an older host) or
         // anything else keeps it: never remove an action on a guess.
         setRestartReachable(status.restartReachable !== false)
+        if (Array.isArray(status.blacklist)) setBlacklist(status.blacklist)
+        if (Array.isArray(status.categoryBlacklist)) setCategoryBlacklist(status.categoryBlacklist)
         if (typeof status.version === 'string' && status.version !== '') setVersion(status.version)
       })
       .catch(() => {})
@@ -2788,8 +2804,10 @@ export function MarketSection(props: MarketSectionProps) {
       sinceDays: timeRange === 'all' ? undefined : TIME_RANGE_DAYS[timeRange],
       hostCompatibility,
       compatibleWithHost,
+      blacklist: blacklistSet,
+      categoryBlacklist: categoryBlacklistSet,
     })),
-    [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost])
+    [data, q, cat, lang, sortField, sortDir, timeRange, hostCompatibility, compatibleWithHost, blacklistSet, categoryBlacklistSet])
   // One plugin can be stored under the installed name or the catalog name.
   // Both have to hide the card and skip Update all (#657).
   const pluginBlocked = (plugin: RegistryPlugin): boolean =>
@@ -2841,8 +2859,10 @@ export function MarketSection(props: MarketSectionProps) {
       category: 'theme', query: qThemes, lang, categories: data.categories,
       sort: `${themeSortField}-${themeSortDir}`,
       sinceDays: themeTimeRange === 'all' ? undefined : TIME_RANGE_DAYS[themeTimeRange],
+      blacklist: blacklistSet,
+      categoryBlacklist: categoryBlacklistSet,
     })),
-    [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange])
+    [data, qThemes, lang, themeSortField, themeSortDir, themeTimeRange, blacklistSet, categoryBlacklistSet])
   const themePlugins = useMemo(
     () => themePluginsAll.filter(plugin => !pluginBlocked(plugin)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4352,7 +4372,9 @@ export function MarketSection(props: MarketSectionProps) {
 
   // The market itself stays out of the batch: its update reloads this page
   // mid-run, which would strand the remaining items.
-  const selfName = installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
+  const selfName = installed['@gausszhou/dsh-market'] !== undefined
+    ? '@gausszhou/dsh-market'
+    : installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
   const updatableNames = Object.keys(installed).filter(
     name => name !== selfName
       && !effectiveDisabledSet.has(name)
@@ -5437,7 +5459,7 @@ export function MarketSection(props: MarketSectionProps) {
   )
 
   /** Installed plugins the market itself cannot group (#60). */
-  const groupableNames = Object.keys(installed).filter(name => name !== 'dsh-market' && name !== 'dshmarket')
+  const groupableNames = Object.keys(installed).filter(name => name !== 'dsh-market' && name !== 'dshmarket' && name !== '@gausszhou/dsh-market')
   /** Names already inside some group; everything else shows under "ungrouped". */
   const groupedNames = useMemo(() => new Set(Object.values(groups).flat()), [groups])
   const ungroupedNames = groupableNames.filter(name => !groupedNames.has(name))
@@ -5527,7 +5549,9 @@ export function MarketSection(props: MarketSectionProps) {
           <a className={css.repoLink} href="https://github.com/dsh-market/dsh-market" target="_blank" rel="noreferrer" title="dsh-market · GitHub">dsh-market</a>
           {version !== null && <span className={css.version} title={t('versionHint')}>v{version}</span>}
           {(() => {
-            const self = installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
+            const self = installed['@gausszhou/dsh-market'] !== undefined
+              ? '@gausszhou/dsh-market'
+              : installed['dshmarket'] !== undefined ? 'dshmarket' : 'dsh-market'
             const status = updates[self]
             return status && status.updateAvailable && !updatedNames.includes(self)
               && !quietUpdateSet.has(self)
@@ -6099,7 +6123,11 @@ export function MarketSection(props: MarketSectionProps) {
                     </div>
                     </div>
                     {plugins.length === 0
-                      ? <div className={css.empty}>{pluginsAll.length > 0 ? t('blockedFilteredEmpty') : t('empty')}</div>
+                      ? <div className={css.empty}>
+                          <div>{pluginsAll.length > 0 ? t('blockedFilteredEmpty') : t('empty')}</div>
+                          {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
+                          {categoryBlacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('categoryBlacklistFilteredHint')}</div>}
+                        </div>
                       : (
                           <>
                             <Masonry items={pagePlugins} render={pluginCard} />
@@ -6255,7 +6283,11 @@ export function MarketSection(props: MarketSectionProps) {
                     : anyThemePlugins.length === 0
                       ? <div className={css.empty}>{t('themeEmpty')}</div>
                       : themePlugins.length === 0
-                        ? <div className={css.empty}>{themePluginsAll.length > 0 ? t('blockedFilteredEmpty') : t('empty')}</div>
+                        ? <div className={css.empty}>
+                            <div>{themePluginsAll.length > 0 ? t('blockedFilteredEmpty') : t('empty')}</div>
+                            {blacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('blacklistFilteredHint')}</div>}
+                            {categoryBlacklistSet.size > 0 && <div className={css.hostFilterNote}>{t('categoryBlacklistFilteredHint')}</div>}
+                          </div>
                         : (
                             <>
                               <div className={css.themeResultBar}>
@@ -6626,7 +6658,7 @@ export function MarketSection(props: MarketSectionProps) {
                                     </span>
                                     {entry?.deprecated === true && <span className={css.depBadge}>{t('deprecatedBadge')}</span>}
                                   </div>
-                                  {!missing && name !== 'dsh-market' && name !== 'dshmarket' && (
+                                  {!missing && name !== 'dsh-market' && name !== 'dshmarket' && name !== '@gausszhou/dsh-market' && (
                                     <span className={css.irowMenu}>{renderInstalledBlockMenu(name)}</span>
                                   )}
                                   </div>

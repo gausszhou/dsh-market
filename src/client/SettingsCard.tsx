@@ -80,6 +80,8 @@ interface SelfStatus {
   githubProxyManaged: boolean
   /** Whether the profile package manager owns this market installation. */
   selfManaged: boolean
+  /** Whether self-updates are enabled (config enableSelfUpdate, default off). */
+  enableSelfUpdate: boolean
   /** The effective build environment (composition + card-saved override). */
   buildEnv: Record<string, string>
 }
@@ -98,6 +100,7 @@ interface StatusBody {
   githubProxyCustom?: string | null
   githubProxyManaged?: boolean
   selfManaged?: boolean
+  enableSelfUpdate?: boolean
   buildEnv?: Record<string, string>
 }
 
@@ -165,6 +168,10 @@ function readStatus(body: StatusBody): SelfStatus {
     githubProxyCustom: typeof body.githubProxyCustom === 'string' ? body.githubProxyCustom : null,
     githubProxyManaged: body.githubProxyManaged === true,
     selfManaged: body.selfManaged !== false,
+    // A host too old to send the field predates the setting; the default is
+    // OFF, so the absence of the field shows the blocked state rather than
+    // inventing an update offer the server would refuse anyway.
+    enableSelfUpdate: body.enableSelfUpdate === true,
     buildEnv: body.buildEnv ?? {},
   }
 }
@@ -264,14 +271,14 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
           setStatus({
             version: null, restart: false, channel: 'stable', channels: ['stable', 'beta'],
             region: 'global', regions: REGIONS, regionAuto: false,
-            githubProxyCustom: null, githubProxyManaged: false, selfManaged: true, buildEnv: {},
+            githubProxyCustom: null, githubProxyManaged: false, selfManaged: true, enableSelfUpdate: false, buildEnv: {},
           })
         }
       }
       try {
         const response = await fetch(api('/dsh-market/updates'), { cache: 'no-store' })
         const body = (await response.json()) as { updates?: Record<string, RawUpdate> }
-        const own = body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
+        const own = body.updates?.['@gausszhou/dsh-market'] ?? body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
         if (live && own !== undefined) setUpdate(readUpdate(own))
       } catch { /* an update check that fails leaves the row without an offer */ }
     })()
@@ -295,7 +302,7 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
     void (async () => {
       try {
         const body = await post(api('/dsh-market/update'), {
-          name: 'dshmarket',
+          name: '@gausszhou/dsh-market',
           ...(update?.restoreRequired === true ? { restore: true } : {}),
           ...(force ? { force: true } : {}),
         }) as {
@@ -342,7 +349,7 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
   const refreshUpdate = useCallback(async (): Promise<void> => {
     const response = await fetch(api('/dsh-market/updates') + '?force=1', { cache: 'no-store' })
     const body = (await response.json()) as { updates?: Record<string, RawUpdate> }
-    const own = body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
+    const own = body.updates?.['@gausszhou/dsh-market'] ?? body.updates?.['dshmarket'] ?? body.updates?.['dsh-market']
     setUpdate(own === undefined ? null : readUpdate(own))
   }, [])
 
@@ -461,7 +468,9 @@ export function SettingsCard({ t, onRemoved }: SettingsCardProps): ReactElement 
   const body = phase === 'removed'
     ? row(t('setSelfRemoved'), t('setSelfRemovedHint'), null)
     : h(Fragment, null,
-        status?.selfManaged === true ? row(
+        status?.selfManaged === true && status.enableSelfUpdate === false
+          ? row(t('setSelfUpdateBlocked'), t('setSelfUpdateBlockedHint'), null)
+          : status?.selfManaged === true ? row(
           // An older offer is not an update, and calling it one would have
           // the user click "更新" to go backwards. It IS what picking an
           // earlier channel asked for, so it is offered — under its own name.

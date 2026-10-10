@@ -4824,6 +4824,13 @@ describe('theme flow', () => {
 })
 
 describe('local-dev restore flow', () => {
+  // The market's own restore/update flows are exactly the ones the
+  // self-update guard exists to close by default — these specs are about
+  // the flow mechanics, so they opt the market INTO self-updates.
+  beforeEach(() => {
+    bed.dispose()
+    bed = createTestbed({ enableSelfUpdate: true })
+  })
   it('refuses a plain update on a link: spec, and restore:true swaps it to the catalog', async () => {
     fake.npm['dsh-loop'] = {
       latest: '1.0.0',
@@ -5401,6 +5408,12 @@ describe('duplicate alias guard (#27)', () => {
 })
 
 describe('market self-update', () => {
+  // Opting the market into self-updates: the default-off guard is covered
+  // in routes.spec; this describe is about the update flow itself.
+  beforeEach(() => {
+    bed.dispose()
+    bed = createTestbed({ enableSelfUpdate: true })
+  })
   it('switches a locally packaged market to its newer online release', async () => {
     await bed.dispatch('POST', '/dsh-market/channel', { channel: 'stable' })
     fake.npm['dshmarket'] = {
@@ -7191,6 +7204,13 @@ describe('build environment (#336)', () => {
 })
 
 describe('release channel', () => {
+  // The channel only ever applies to the market itself; with self-updates
+  // off by default the channel would be moot. These specs pin the channel
+  // mechanics, so the market is opted into self-updates here.
+  beforeEach(() => {
+    bed.dispose()
+    bed = createTestbed({ enableSelfUpdate: true })
+  })
   it('rejects anything but the two channels', async () => {
     expect((await bed.dispatch('POST', '/dsh-market/channel', { channel: 'nightly' })).status).toBe(400)
     expect((await bed.dispatch('POST', '/dsh-market/channel', {})).status).toBe(400)

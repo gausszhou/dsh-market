@@ -138,6 +138,15 @@ describe('checkUpdates — github pins', () => {
     expect(result.themer).toMatchObject({ kind: 'github', current: OLD, latest: HEAD, updateAvailable: true })
   })
 
+  it('skips an excluded name before any lookup', async () => {
+    // enableSelfUpdate: false excludes the market itself from detection —
+    // the entry must vanish from the listing entirely, not read as
+    // "up to date" (a lie next to a working update button).
+    const result = await checkUpdates('web', true, profileWith('^1.0.0', null, '1.0.0'), new Map(), new Map(), new Set(['themer']))
+    expect(result.themer).toBeUndefined()
+    expect(Object.keys(result)).toHaveLength(0)
+  })
+
   it('reports no update when the pin already IS HEAD', async () => {
     const result = await checkUpdates('web', true, profileWith('github:owner/themer', HEAD))
     expect(result.themer).toMatchObject({ current: HEAD, latest: HEAD, updateAvailable: false })
@@ -651,7 +660,7 @@ describe('checkUpdates — URL installs and catalog authorization (#768)', () =>
     const npm = stubNpmLatest('9.9.9')
     try {
       const catalogNpmByRepo = new Map([['o/themer', 'themer']])
-      const row = (await checkUpdates('web', true, dir, new Map(), new Map(), catalogNpmByRepo))['themer']
+      const row = (await checkUpdates('web', true, dir, new Map(), new Map(), new Set(), catalogNpmByRepo))['themer']
       expect(npm.hits()).toBeGreaterThan(0)
       expect(row).toMatchObject({ kind: 'npm', current: '1.0.0', latest: '9.9.9', updateAvailable: true })
     } finally { vi.unstubAllGlobals(); rmSync(dir, { recursive: true, force: true }) }

@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  entryForDep, extractReadmeImageCandidates, extractReadmeImages, formatCount, groupSwitchState, installedForCatalog, isInstalled, isMarketItself, localizeBilingual, localizeBilingualList, looksTerminal, matchInstalledName, orderedCategories, pageItems, pluginCategories, pluginsForFavorites, previewDimensionScore, rankThemeScreenshots, releaseNotesHttpsImage, safeScreenshots, sanitizeReleaseNotesBody, staleFavoriteUrls, themePlugins, visiblePlugins, humanOutput, catalogEntryForInstalled} from '../src/client/market-data.ts'
+  entryForDep, extractReadmeImageCandidates, extractReadmeImages, formatCount, groupSwitchState, installedForCatalog, isBlacklisted, isInstalled, isMarketItself, localizeBilingual, localizeBilingualList, looksTerminal, matchInstalledName, orderedCategories, pageItems, pluginCategories, pluginsForFavorites, previewDimensionScore, rankThemeScreenshots, releaseNotesHttpsImage, safeScreenshots, sanitizeReleaseNotesBody, staleFavoriteUrls, themePlugins, visiblePlugins, humanOutput, catalogEntryForInstalled} from '../src/client/market-data.ts'
 import type { RegistryPlugin, ScreenshotCandidate } from '../src/client/market-data.ts'
 
 function plugin(partial: Partial<RegistryPlugin>): RegistryPlugin {
@@ -1042,5 +1042,90 @@ describe('local link:/file: matching stays cheap as the catalog grows (#589)', (
     expect(catalogEntryForInstalled(plugins, 'solo', spec, [], [''])).toBeUndefined()
     // Re-ask in the other order: the cached answers must not have merged.
     expect(catalogEntryForInstalled(plugins, 'solo', spec, [], [])?.url).toBe('https://github.com/a/solo')
+  })
+})
+
+describe('isBlacklisted / visiblePlugins blacklist', () => {
+  it('matches by bare name, npm package name, repo root, and full normalized url', () => {
+    const entry = plugin({ name: 'dsh-noise', npm: 'dsh-noise', url: 'https://github.com/owner/dsh-noise' })
+    expect(isBlacklisted(entry, new Set(['dsh-noise']))).toBe(true)
+    expect(isBlacklisted(entry, new Set(['owner/dsh-noise']))).toBe(true)
+    expect(isBlacklisted(entry, new Set(['https://github.com/owner/dsh-noise']))).toBe(true)
+    // Tokens arrive pre-normalized from the server (lowercased, trailing
+    // slashes stripped); the matcher normalizes only the entry URL, so an
+    // unnormalized token is honestly a non-match — pins the contract.
+    expect(isBlacklisted(entry, new Set(['HTTPS://GITHUB.COM/OWNER/DSH-NOISE/']))).toBe(false)
+    expect(isBlacklisted(entry, new Set(['unrelated']))).toBe(false)
+  })
+
+  it('matches a subpath catalog entry by its repo root and by its subpath identity', () => {
+    const sub = plugin({ name: 'a', url: 'https://github.com/owner/mono/tree/main/pkgs/a' })
+    // The bare root is intent: "nothing from owner/mono".
+    expect(isBlacklisted(sub, new Set(['owner/mono']))).toBe(true)
+    expect(isBlacklisted(sub, new Set(['owner/mono#path:/pkgs/a']))).toBe(true)
+    expect(isBlacklisted(sub, new Set(['owner/other']))).toBe(false)
+  })
+
+  it('an undefined or empty set hides nothing', () => {
+    const entry = plugin({ name: 'dsh-noise' })
+    expect(isBlacklisted(entry, undefined)).toBe(false)
+    expect(isBlacklisted(entry, new Set())).toBe(false)
+  })
+
+  it('visiblePlugins drops blacklisted entries and keeps the rest in order', () => {
+    const keep = plugin({ name: 'keep', url: 'https://github.com/owner/keep' })
+    const drop = plugin({ name: 'noise', url: 'https://github.com/owner/noise' })
+    const out = visiblePlugins([keep, drop], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      blacklist: new Set(['owner/noise']),
+    })
+    expect(out.map(entry => entry.name)).toEqual(['keep'])
+  })
+
+  it('visiblePlugins drops entries carrying any blocked category', () => {
+    const tool = plugin({ name: 'tool-a', category: 'tools' })
+    const hybrid = plugin({ name: 'hybrid', category: ['theme', 'tools'] })
+    const theme = plugin({ name: 'theme-a', category: 'theme' })
+    const keep = plugin({ name: 'keep', category: 'skill' })
+    // Blocking one category removes every entry that carries it — a hybrid
+    // theme+tools entry is gone with the themes, not kept for its tools half.
+    expect(visiblePlugins([tool, hybrid, theme, keep], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(['theme']),
+    }).map(entry => entry.name)).toEqual(['tool-a', 'keep'])
+    // Category ids are compared lowercased, so a catalog's capitalized slug
+    // still matches the server-normalized (lowercase) blocked token.
+    expect(visiblePlugins([plugin({ name: 'theme-a', category: 'Theme' })], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(['theme']),
+    })).toEqual([])
+    // Tokens arrive pre-normalized from the server; an unnormalized token is
+    // honestly a non-match — pins the same contract as `isBlacklisted`.
+    expect(visiblePlugins([theme], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(['THEME']),
+    })).toEqual([theme])
+    // An undefined or empty set hides nothing.
+    expect(visiblePlugins([theme], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+    }).map(entry => entry.name)).toEqual(['theme-a'])
+    expect(visiblePlugins([theme], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      categoryBlacklist: new Set(),
+    }).map(entry => entry.name)).toEqual(['theme-a'])
+  })
+})
+
+describe('fork acceptance blacklist tokens', () => {
+  it('drops the three configured entries from the catalog and keeps the rest', () => {
+    const sidebar = plugin({ name: 'dsh-better-sidebar', url: 'https://github.com/a/dsh-better-sidebar' })
+    const remote = plugin({ name: 'dsh-remote-web-ui', npm: '@linxin666/dsh-remote-web-ui', url: 'https://github.com/linxin666/dsh-remote-web-ui' })
+    const skin = plugin({ name: 'dsh-dream-skin', url: 'https://github.com/b/dsh-dream-skin' })
+    const keep = plugin({ name: 'dsh-other', url: 'https://github.com/c/dsh-other' })
+    const out = visiblePlugins([sidebar, remote, skin, keep], {
+      category: 'all', query: '', lang: 'en', sort: 'stars-desc',
+      blacklist: new Set(['dsh-better-sidebar', '@linxin666/dsh-remote-web-ui', 'dsh-dream-skin']),
+    })
+    expect(out.map(entry => entry.name)).toEqual(['dsh-other'])
   })
 })

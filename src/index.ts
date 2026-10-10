@@ -16,7 +16,7 @@ import type { AgentsServiceLike } from './agents.ts'
 export const name = 'dsh-market'
 
 /** Optional cordis.yml configuration; profile defaults to `web`. */
-export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots' | 'buildEnv'>>
+export type Config = Partial<Pick<MarketConfig, 'profile' | 'allowRestart' | 'maxSnapshots' | 'blacklist' | 'categoryBlacklist' | 'enableSelfUpdate' | 'buildEnv'>>
 
 /**
  * Structural subset of the dsh launcher's public `profileContext` service —
@@ -267,6 +267,9 @@ export function apply(ctx: Context, config?: Config): void {
           desktopHost: true,
           allowRestart: false,
           maxSnapshots: config?.maxSnapshots,
+          blacklist: config?.blacklist,
+          categoryBlacklist: config?.categoryBlacklist,
+          enableSelfUpdate: config?.enableSelfUpdate,
           // The third construction site, and the one #527's review caught
           // missing: a `buildEnv` configured in cordis.yml was silently
           // dropped on the official desktop host — the very host the feature
@@ -309,6 +312,9 @@ export function apply(ctx: Context, config?: Config): void {
         // is exactly the distinction supervisor detection needs (#229).
         allowRestart: config?.allowRestart,
         maxSnapshots: config?.maxSnapshots,
+        blacklist: config?.blacklist,
+        categoryBlacklist: config?.categoryBlacklist,
+        enableSelfUpdate: config?.enableSelfUpdate,
         // Build-time environment (#336); undefined means "inherit", and the
         // settings wiring below is what makes it editable at runtime.
         buildEnv: config?.buildEnv,
@@ -352,6 +358,9 @@ export function apply(ctx: Context, config?: Config): void {
         // lifecycle. The shell remains responsible for restart in this mode.
         allowRestart: false,
         maxSnapshots: config?.maxSnapshots,
+        blacklist: config?.blacklist,
+        categoryBlacklist: config?.categoryBlacklist,
+        enableSelfUpdate: config?.enableSelfUpdate,
         // The operator's pinned build environment applies in Desktop mode
         // too: Desktop's packaged pnpm still runs plugin build scripts.
         buildEnv: config?.buildEnv,

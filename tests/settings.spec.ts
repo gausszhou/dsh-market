@@ -85,10 +85,28 @@ describe('MarketSettings schema', () => {
     //
     // A schema field is a claim of ownership, so this asserts the claim
     // stays narrow — widening it silently is exactly how that happened.
+    // The blacklist/self-update fields below are claimed HERE on purpose:
+    // the routes read them off this same namespace (config-report fields),
+    // so the claim and the reader cannot drift.
     // The consequence itself is caught in layer 3 (tests/web/channel.e2e.ts)
     // against a real settings service, per this file's own rule about not
     // hand-writing a stand-in for a contract we did not author.
-    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart'])
+    expect(Object.keys(MarketSettings({}))).toEqual(['allowRestart', 'blacklist', 'categoryBlacklist', 'enableSelfUpdate'])
+  })
+
+  it('defaults the blacklists empty and self-update off', () => {
+    const parsed = MarketSettings({})
+    expect(parsed.blacklist).toEqual([])
+    expect(parsed.categoryBlacklist).toEqual([])
+    // Default false: an unset value must not read as "updates allowed".
+    expect(parsed.enableSelfUpdate).toBe(false)
+  })
+
+  it('passes configured blacklist tokens and category ids through', () => {
+    const parsed = MarketSettings({ blacklist: ['owner/repo'], categoryBlacklist: ['theme'], enableSelfUpdate: true })
+    expect(parsed.blacklist).toEqual(['owner/repo'])
+    expect(parsed.categoryBlacklist).toEqual(['theme'])
+    expect(parsed.enableSelfUpdate).toBe(true)
   })
 })
 
