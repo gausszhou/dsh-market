@@ -9,12 +9,15 @@ name: Site health
 # falls behind the catalog. It reads the site rather than trusting CI's own
 # report, so it also catches a build that never runs at all.
 #
-# Deliberately not at 03:41, when `build-site` runs: this must read a finished
-# deploy, not one in flight.
+# Scheduled runs are turned off on purpose. While this is off, a silent
+# freeze of the deployed site goes unnoticed — run it by hand from the Actions
+# tab when you want the check to run. Re-enable by restoring the block below.
+# (Deliberately not at 03:41, when `build-site` runs: this must read a finished
+# deploy, not one in flight.)
 
 on:
-  schedule:
-    - cron: '17 7 * * *'
+  # schedule:
+  #   - cron: '17 7 * * *'
   workflow_dispatch:
     inputs:
       tolerance:

@@ -1,11 +1,11 @@
 name: Build site
 
 on:
-  # The catalog changes upstream, not here, so the site has to rebuild on a
-  # clock as well as on pushes — otherwise a plugin listed today would not get
-  # a page until someone happened to touch this repository.
-  schedule:
-    - cron: '41 3 * * *'
+  # Scheduled runs are turned off on purpose. The catalog changes upstream, not
+  # here, so without a clock a plugin listed today gets no page until someone
+  # pushes or triggers a run by hand. Re-enable by restoring the block below.
+  # schedule:
+  #   - cron: '41 3 * * *'
   workflow_dispatch:
   push:
     branches: [main]
